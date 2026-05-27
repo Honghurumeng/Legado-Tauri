@@ -47,6 +47,11 @@ export type BridgeMethod = (typeof BRIDGE_METHODS)[number];
 const LOCKED_VIEWPORT_META =
   '<meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no, viewport-fit=cover">';
 
+export interface ExploreThemeSnapshot {
+  mode: 'dark' | 'light';
+  variables: Record<string, string>;
+}
+
 // ── 注入 iframe 的 bridge 脚本 ────────────────────────────────────────────
 
 /**
@@ -55,7 +60,13 @@ const LOCKED_VIEWPORT_META =
  * 该脚本在 iframe 内定义 `window.legado` 对象，每个方法通过 postMessage
  * 与父页面通信，返回 Promise 等待 Vue 层代理结果。
  */
-function generateBridgeScript(): string {
+function escapeScriptJson(value: unknown): string {
+  return (JSON.stringify(value) ?? 'null').replace(/</g, '\\u003c');
+}
+
+function generateBridgeScript(theme?: ExploreThemeSnapshot): string {
+  const themeJson = escapeScriptJson(theme ?? null);
+
   return `
 <script>
 (function() {
@@ -117,6 +128,8 @@ function generateBridgeScript(): string {
   // ── 定义 window.legado 对象 ───────────────────────────────────────────
 
   window.legado = {
+    theme: ${themeJson},
+
     http: {
       get: function(url, headers) {
         return request('http.get', [url, headers || null]);
@@ -193,36 +206,94 @@ function generateBridgeScript(): string {
  * 提供与主应用视觉风格一致的基础 CSS 变量和 reset 样式，
  * 书源可直接使用这些变量构建 UI。
  */
-function generateBaseStyles(): string {
+function escapeCssValue(value: string): string {
+  return value.replace(/<\/style/gi, '<\\/style');
+}
+
+function generateThemeVariableBlock(theme?: ExploreThemeSnapshot): string {
+  if (!theme) {
+    return '';
+  }
+
+  const variables = Object.entries(theme.variables)
+    .filter(([name, value]) => /^--[a-z0-9-]+$/i.test(name) && value.trim())
+    .map(([name, value]) => `    ${name}: ${escapeCssValue(value.trim())};`)
+    .join('\n');
+
+  return `
+  :root {
+    color-scheme: ${theme.mode};
+${variables}
+  }`;
+}
+
+function generateBaseStyles(theme?: ExploreThemeSnapshot): string {
+  const themeVariables = generateThemeVariableBlock(theme);
+
   return `
 <style>
   :root {
-    --bg: #1e1e2e;
-    --bg-card: #2a2a3c;
-    --bg-hover: #33334a;
-    --text: #e0e0e0;
-    --text-secondary: #a0a0b0;
-    --primary: #64b5f6;
-    --primary-hover: #90caf9;
-    --border: #3a3a4c;
+    color-scheme: light;
+    --color-bg: #f8f9fb;
+    --color-bg-page: #f8f9fb;
+    --color-content-bg: #e9eaf3;
+    --color-surface: #ffffff;
+    --color-surface-elevated: #ffffff;
+    --color-surface-raised: #ffffff;
+    --color-surface-hover: #e4e4e7;
+    --color-text: #161b26;
+    --color-text-primary: #18181b;
+    --color-text-soft: #5f6980;
+    --color-text-secondary: #52525b;
+    --color-text-muted: #848fa3;
+    --color-border: #e6e9f0;
+    --color-border-strong: #d4d9e4;
+    --color-accent: #3452e6;
+    --color-accent-hover: #2942ba;
+    --color-accent-soft: #eef3ff;
+    --color-accent-contrast: #ffffff;
+    --color-hover: rgba(22, 27, 38, 0.06);
+    --color-active: rgba(22, 27, 38, 0.1);
+    --bg: var(--color-bg-page);
+    --bg-card: var(--color-surface);
+    --bg-hover: var(--color-hover);
+    --text: var(--color-text, var(--color-text-primary));
+    --text-secondary: var(--color-text-soft, var(--color-text-secondary));
+    --primary: var(--color-accent);
+    --primary-hover: var(--color-accent-hover);
+    --border: var(--color-border);
     --radius: 8px;
     --radius-sm: 4px;
-    --shadow: 0 2px 8px rgba(0,0,0,0.3);
-    --font: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+    --shadow: 0 2px 8px rgba(12,16,24,0.1);
+    --font: var(--font-ui, -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif);
   }
-  @media (prefers-color-scheme: light) {
+  @media (prefers-color-scheme: dark) {
     :root {
-      --bg: #f5f5f5;
-      --bg-card: #ffffff;
-      --bg-hover: #f0f0f0;
-      --text: #333333;
-      --text-secondary: #666666;
-      --primary: #1976d2;
-      --primary-hover: #1565c0;
-      --border: #e0e0e0;
-      --shadow: 0 2px 8px rgba(0,0,0,0.1);
+      color-scheme: dark;
+      --color-bg: #0c1018;
+      --color-bg-page: #0c1018;
+      --color-content-bg: #13141d;
+      --color-surface: #161b26;
+      --color-surface-elevated: #2a3140;
+      --color-surface-raised: #27272a;
+      --color-surface-hover: #3f3f46;
+      --color-text: #f8f9fb;
+      --color-text-primary: #fafafa;
+      --color-text-soft: #d4d9e4;
+      --color-text-secondary: #a1a1aa;
+      --color-text-muted: #848fa3;
+      --color-border: rgba(255,255,255,0.1);
+      --color-border-strong: rgba(255,255,255,0.18);
+      --color-accent: #8fafff;
+      --color-accent-hover: #b7cbff;
+      --color-accent-soft: rgba(103,140,255,0.16);
+      --color-accent-contrast: #0c1018;
+      --color-hover: rgba(255,255,255,0.08);
+      --color-active: rgba(255,255,255,0.12);
+      --shadow: 0 2px 8px rgba(0,0,0,0.3);
     }
   }
+${themeVariables}
   * { box-sizing: border-box; margin: 0; padding: 0; }
   html,
   body {
@@ -329,14 +400,14 @@ function ensureLockedViewportMeta(html: string): string {
  * @param html 书源 explore() 返回的 HTML 字符串
  * @returns 完整的 srcdoc HTML
  */
-export function buildSrcdoc(html: string): string {
-  const bridgeScript = generateBridgeScript();
-  const baseStyles = generateBaseStyles();
+export function buildSrcdoc(html: string, theme?: ExploreThemeSnapshot): string {
+  const bridgeScript = generateBridgeScript(theme);
+  const baseStyles = generateBaseStyles(theme);
   const htmlWithLockedViewport = ensureLockedViewportMeta(html);
 
-  // 如果 HTML 已包含 <html> 或 <head>，在 <head> 末尾注入
+  // 如果 HTML 已包含 <html> 或 <head>，在 <head> 开头注入；书源自己的 CSS 仍可覆盖基础样式。
   if (/<head[\s>]/i.test(htmlWithLockedViewport)) {
-    return htmlWithLockedViewport.replace(/<\/head>/i, `${baseStyles}\n${bridgeScript}\n</head>`);
+    return htmlWithLockedViewport.replace(/<head([^>]*)>/i, `<head$1>\n${baseStyles}\n${bridgeScript}`);
   }
 
   // 如果 HTML 已有 <html> 但没有 <head>

@@ -1,5 +1,6 @@
 <!-- TestSourcesTab — 书源批量测试、日志查看与按测试失败类型清理入口。 -->
 <script setup lang="ts">
+import { Lock, Unlock } from 'lucide-vue-next';
 import { ref, nextTick, watch, computed, onMounted, onUnmounted } from 'vue';
 import { useMessage } from 'naive-ui';
 import { storeToRefs } from 'pinia';
@@ -202,6 +203,7 @@ const failCount = computed(
 );
 
 const fullModeEnabled = computed(() => devTools.value.fullModeEnabled);
+const fullModeIcon = computed(() => (fullModeEnabled.value ? Unlock : Lock));
 
 type FailedDeleteMode = 'search' | 'explore' | 'any';
 
@@ -438,6 +440,9 @@ function confirmDeleteFailedSources(mode: FailedDeleteMode) {
         :disabled="testRunning || !fullModeEnabled"
         @click="runAllTests"
       >
+        <template #icon>
+          <component :is="fullModeIcon" :size="14" />
+        </template>
         {{ testRunning ? '测试中...' : '全部测试' }}
       </n-button>
       <n-dropdown
@@ -452,6 +457,9 @@ function confirmDeleteFailedSources(mode: FailedDeleteMode) {
           :loading="batchDeleting"
           :disabled="!canDeleteFailedSources"
         >
+          <template #icon>
+            <component :is="fullModeIcon" :size="14" />
+          </template>
           删除未通过
         </n-button>
       </n-dropdown>
@@ -462,7 +470,7 @@ function confirmDeleteFailedSources(mode: FailedDeleteMode) {
         ✅ {{ passCount }} ❌ {{ failCount }}
       </span>
       <span v-if="!fullModeEnabled" class="bv-test__progress">
-        完全体模式未激活
+        完全体模式未激活，批量测试和删除未通过已锁定
       </span>
 
       <!-- 设置区 -->

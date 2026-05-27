@@ -1,14 +1,20 @@
+/**
+ * bookshelfUi store — 管理书架筛选、右键菜单和书架相关弹层状态。
+ */
 import type { DropdownOption } from 'naive-ui';
 import { defineStore } from 'pinia';
-import { computed, nextTick, ref } from 'vue';
+import { computed, h, nextTick, ref } from 'vue';
+import { Lock, Unlock } from 'lucide-vue-next';
 import type { CachedChapter, ChapterItem, ShelfBook } from '@/stores';
 import { isTauri } from '@/composables/useEnv';
 import { useBookshelfStore, useFrontendPluginsStore, usePrivacyModeStore } from '@/stores';
+import { usePreferencesStore } from '@/stores/preferences';
 
 export const useBookshelfUiStore = defineStore('bookshelfUi', () => {
   const bookshelfStore = useBookshelfStore();
   const privacyModeStore = usePrivacyModeStore();
   const frontendPluginsStore = useFrontendPluginsStore();
+  const preferencesStore = usePreferencesStore();
 
   const searchKw = ref('');
   const openingBookId = ref<string | null>(null);
@@ -91,7 +97,12 @@ export const useBookshelfUiStore = defineStore('bookshelfUi', () => {
       items.push({ label: '打开本地目录', key: 'reveal-dir' });
     }
     if ((book?.sourceType ?? 'novel') === 'novel') {
-      items.push({ label: '导出书籍', key: 'export' });
+      const ExportIcon = preferencesStore.devTools.fullModeEnabled ? Unlock : Lock;
+      items.push({
+        label: '导出书籍',
+        key: 'export',
+        icon: () => h(ExportIcon, { size: 14, strokeWidth: 2.2 }),
+      });
     }
     items.push({ label: '移出书架', key: 'remove' });
     return items;

@@ -1,4 +1,6 @@
+<!-- ReaderVideoSurface — 阅读器视频承载层；当前在未开放播放器时显示解锁提示。 -->
 <script setup lang="ts">
+import { Lock } from 'lucide-vue-next';
 import { useMessage } from 'naive-ui';
 import { onBeforeUnmount, onMounted, ref } from 'vue';
 import type { ChapterGroup } from '@/stores';
@@ -48,7 +50,7 @@ defineExpose({ getCurrentTime, getDuration });
 let closeTimer: ReturnType<typeof setTimeout> | null = null;
 
 onMounted(() => {
-  message.warning('该功能暂时无法使用', {
+  message.warning('需要解锁完全体模式后才能使用音频/视频播放', {
     duration: 2500,
     keepAliveOnHover: false,
   });
@@ -92,7 +94,8 @@ onBeforeUnmount(() => {
     @retry="readerActionsStore.retryCurrentChapter"
   /> -->
   <div class="video-unavailable">
-    <span class="video-unavailable__text">该功能暂时无法使用</span>
+    <Lock :size="24" :stroke-width="2.4" />
+    <span class="video-unavailable__text">需要解锁完全体模式后才能使用音频/视频播放</span>
   </div>
 </template>
 
@@ -101,6 +104,7 @@ onBeforeUnmount(() => {
   display: flex;
   align-items: center;
   justify-content: center;
+  gap: 10px;
   width: 100%;
   height: 100%;
   background: #000;

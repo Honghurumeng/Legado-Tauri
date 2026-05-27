@@ -2,7 +2,7 @@
  * useAiAgent — AI 自动写书源 Agent
  *
  * 架构：
- *   前端 → Vercel AI SDK streamText → Rust HTTP 后端（OpenAI 兼容 API）→ 多步工具调用循环
+ *   前端 → Vercel AI SDK streamText → 可切换的 HTTP 通道（浏览器直连 / Rust 后端代理）→ 多步工具调用循环
  *   工具调用 → 现有 Tauri 命令（listBookSources / readBookSource / saveBookSource /
  *              evalBookSource / booksource_search / booksource_book_info 等）
  *
@@ -59,6 +59,12 @@ export interface AiConfig {
    * 默认 chat
    */
   apiMode: "chat" | "responses";
+  /**
+   * 模型 HTTP 请求通道:
+   * - `frontend` → 浏览器 fetch 直连，支持流式响应与实时思考显示，但受 CORS / 系统代理影响
+   * - `backend`  → Rust 本地流式代理，复用应用 HTTP 配置，并支持实时流式显示
+   */
+  requestTransport: "frontend" | "backend";
   /** 采样温度，可选，留空表示使用模型默认値 */
   temperature?: number;
   /** 单次调用最大输出 Token，可选，留空表示不限制 */
@@ -75,6 +81,7 @@ function defaultAiConfig(): AiConfig {
     model: "gpt-4o",
     maxSteps: 30,
     apiMode: "chat",
+    requestTransport: "backend",
   };
 }
 
@@ -90,6 +97,7 @@ function parseAiConfig(raw: string | null): AiConfig {
       model: parsed.model ?? "gpt-4o",
       maxSteps: parsed.maxSteps ?? 30,
       apiMode: parsed.apiMode ?? "chat",
+      requestTransport: parsed.requestTransport ?? "backend",
       temperature: parsed.temperature,
       maxTokens: parsed.maxTokens,
     };
@@ -626,13 +634,20 @@ function safeJsonStringify(value: unknown): string {
 type JsonRecord = Record<string, unknown>;
 type NativeFetch = typeof fetch;
 
-interface BackendHttpResponse {
-  status: number;
-  headers: Array<[string, string]>;
-  body: string;
-}
-
 const LEGADO_REASONING_PROVIDER = "legadoReasoning";
+let backendHttpProxyUrlPromise: Promise<string> | null = null;
+
+function getBackendHttpProxyUrl(): Promise<string> {
+  backendHttpProxyUrlPromise ??= invokeWithTimeout<string>(
+    "ai_http_proxy_url",
+    {},
+    5_000,
+  ).catch((error) => {
+    backendHttpProxyUrlPromise = null;
+    throw error;
+  });
+  return backendHttpProxyUrlPromise;
+}
 
 function abortError(): Error {
   return new Error("AI 请求已取消");
@@ -741,21 +756,8 @@ function createBackendHttpFetch(signal: AbortSignal): NativeFetch {
     const method = requestMethod(input, init);
     const body = await requestBody(input, init);
     const headers = requestHeaders(input, init);
-    const timeoutSecs = 300;
-    const response = await Promise.race([
-      invokeWithTimeout<BackendHttpResponse>(
-        "frontend_plugin_http_request",
-        {
-          request: {
-            url,
-            method,
-            headers,
-            body,
-            timeoutSecs,
-          },
-        },
-        timeoutSecs * 1000 + 5_000,
-      ),
+    const proxyUrl = await Promise.race([
+      getBackendHttpProxyUrl(),
       waitForAbort(signal, init),
     ]);
 
@@ -763,9 +765,23 @@ function createBackendHttpFetch(signal: AbortSignal): NativeFetch {
       throw abortError();
     }
 
-    return new Response(response.body, {
-      status: response.status,
-      headers: response.headers,
+    return fetch(`${proxyUrl}?url=${encodeURIComponent(url)}`, {
+      method,
+      headers,
+      body,
+      signal: isAbortSignal(init?.signal) ? init.signal : signal,
+    });
+  };
+}
+
+function createFrontendHttpFetch(signal: AbortSignal): NativeFetch {
+  return async (input, init) => {
+    if (isAborted(signal, init)) {
+      throw abortError();
+    }
+    return fetch(input, {
+      ...init,
+      signal: isAbortSignal(init?.signal) ? init.signal : signal,
     });
   };
 }
@@ -1283,9 +1299,21 @@ export async function runAiAgent(
   );
 
   const useChatCompletions = (config.apiMode ?? "chat") === "chat";
-  const backendFetch = createBackendHttpFetch(_abortController.signal);
+  const requestTransport = config.requestTransport ?? "backend";
+  const modelFetch =
+    requestTransport === "frontend"
+      ? createFrontendHttpFetch(_abortController.signal)
+      : createBackendHttpFetch(_abortController.signal);
+
+  addActivity(
+    "info",
+    requestTransport === "frontend"
+      ? "请求通道：前端直连（支持流式显示，可能受 CORS 限制）"
+      : "请求通道：后端 HTTP 代理（支持流式显示，并复用应用代理和 TLS 设置）",
+  );
+
   const reasoningBridge = useChatCompletions
-    ? createChatReasoningContentBridge(backendFetch)
+    ? createChatReasoningContentBridge(modelFetch)
     : undefined;
   if (reasoningBridge) {
     reasoningBridge.preloadFromMessages(prevMessages);
@@ -1302,7 +1330,7 @@ export async function runAiAgent(
     const openaiProvider = createOpenAI({
       apiKey: config.apiKey || "placeholder",
       baseURL: config.apiUrl.replace(/\/$/, ""),
-      fetch: reasoningBridge?.fetch ?? backendFetch,
+      fetch: reasoningBridge?.fetch ?? modelFetch,
     });
 
     // 根据 apiMode 选择请求路径：

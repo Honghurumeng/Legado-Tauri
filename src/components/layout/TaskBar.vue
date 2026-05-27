@@ -1,5 +1,10 @@
+<!-- TaskBar — PC 端底部任务栏，展示版本、平台、日志入口和运行模式标识。 -->
 <script setup lang="ts">
+import { Unlock } from 'lucide-vue-next';
 import type { ShellLogLevel } from '@/stores';
+import { usePreferencesStore } from '@/stores/preferences';
+
+const prefStore = usePreferencesStore();
 
 withDefaults(
   defineProps<{
@@ -63,6 +68,16 @@ const emit = defineEmits<{
       >
       <span class="task-bar__log-msg">{{ latestLogMessage || '暂无日志' }}</span>
     </button>
+
+    <span
+      v-if="prefStore.devTools.fullModeEnabled"
+      class="task-bar__full-mode"
+      title="完全体模式已激活"
+      aria-label="完全体模式已激活"
+    >
+      <Unlock :size="12" :stroke-width="2.4" />
+      <span>完全体</span>
+    </span>
   </footer>
 </template>
 
@@ -163,6 +178,22 @@ const emit = defineEmits<{
   text-overflow: ellipsis;
   white-space: nowrap;
   min-width: 0;
+}
+.task-bar__full-mode {
+  margin-left: auto;
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  height: 20px;
+  padding: 0 8px;
+  border: 1px solid color-mix(in srgb, var(--color-accent) 45%, transparent);
+  border-radius: 999px;
+  color: var(--color-accent);
+  background: color-mix(in srgb, var(--color-accent) 10%, transparent);
+  font-size: var(--fs-11);
+  font-weight: var(--fw-semibold);
+  white-space: nowrap;
+  flex-shrink: 0;
 }
 
 /* ── 响应式隐藏 ── */

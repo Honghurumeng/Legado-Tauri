@@ -112,7 +112,7 @@ export function useBookshelfReaderLauncher(message: MessageApi) {
       !prefStore.devTools.fullModeEnabled &&
       (book.sourceType === "music" || book.sourceType === "video")
     ) {
-      message.warning("该功能暂时无法使用");
+      message.warning("需要解锁完全体模式后才能使用音频/视频播放");
       return;
     }
     // if (book.sourceType === 'music') {

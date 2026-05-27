@@ -18,9 +18,48 @@ import {
   buildSrcdoc,
   MSG_REQUEST,
   MSG_RESPONSE,
+  type ExploreThemeSnapshot,
   type BridgeMethod,
 } from '../../composables/useExploreBridge';
 import { invokeWithTimeout } from '../../composables/useInvoke';
+
+const THEME_VARIABLE_NAMES = [
+  '--font-ui',
+  '--color-bg',
+  '--color-bg-page',
+  '--color-content-bg',
+  '--color-surface',
+  '--color-surface-elevated',
+  '--color-surface-raised',
+  '--color-surface-hover',
+  '--color-text',
+  '--color-text-primary',
+  '--color-text-soft',
+  '--color-text-secondary',
+  '--color-text-muted',
+  '--color-border',
+  '--color-border-strong',
+  '--color-accent',
+  '--color-accent-hover',
+  '--color-accent-soft',
+  '--color-accent-contrast',
+  '--color-hover',
+  '--color-active',
+  '--color-danger',
+  '--color-danger-bg',
+  '--color-danger-border',
+  '--color-success',
+  '--color-warning',
+  '--scrollbar-thumb',
+  '--scrollbar-thumb-hover',
+  '--shadow-1',
+  '--shadow-2',
+  '--radius-xs',
+  '--radius-sm',
+  '--radius-md',
+  '--radius-1',
+  '--radius-2',
+] as const;
 
 const props = defineProps<{
   /** 书源文件名（用于 callSource / config scope） */
@@ -40,9 +79,33 @@ const emit = defineEmits<{
 
 const message = useMessage();
 const iframeRef = ref<HTMLIFrameElement | null>(null);
+const themeSnapshot = ref<ExploreThemeSnapshot>(readExploreThemeSnapshot());
+let themeObserver: MutationObserver | null = null;
 
 /** 构建注入 bridge 的完整 srcdoc */
-const srcdoc = computed(() => buildSrcdoc(props.html));
+const srcdoc = computed(() => buildSrcdoc(props.html, themeSnapshot.value));
+
+function readExploreThemeSnapshot(): ExploreThemeSnapshot {
+  if (typeof document === 'undefined') {
+    return { mode: 'light', variables: {} };
+  }
+
+  const root = document.documentElement;
+  const style = getComputedStyle(root);
+  const mode = root.getAttribute('data-theme') === 'dark' ? 'dark' : 'light';
+  const variables: Record<string, string> = {};
+  for (const name of THEME_VARIABLE_NAMES) {
+    const value = style.getPropertyValue(name).trim();
+    if (value) {
+      variables[name] = value;
+    }
+  }
+  return { mode, variables };
+}
+
+function syncThemeSnapshot() {
+  themeSnapshot.value = readExploreThemeSnapshot();
+}
 
 // ── postMessage 消息处理 ──────────────────────────────────────────────────
 
@@ -258,10 +321,18 @@ async function routeMethod(method: BridgeMethod, args: unknown[]): Promise<unkno
 // ── 生命周期 ──────────────────────────────────────────────────────────────
 
 onMounted(() => {
+  syncThemeSnapshot();
+  themeObserver = new MutationObserver(syncThemeSnapshot);
+  themeObserver.observe(document.documentElement, {
+    attributes: true,
+    attributeFilter: ['data-theme'],
+  });
   window.addEventListener('message', handleMessage);
 });
 
 onBeforeUnmount(() => {
+  themeObserver?.disconnect();
+  themeObserver = null;
   window.removeEventListener('message', handleMessage);
 });
 

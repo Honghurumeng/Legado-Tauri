@@ -17,6 +17,7 @@ import {
 import { useMessage } from "naive-ui";
 import { storeToRefs } from "pinia";
 import { ref, watch, nextTick, computed, onMounted } from "vue";
+import AppDialog from "@/components/base/AppDialog.vue";
 import { useBackAwareDialog as useDialog } from "@/composables/useBackAwareDialog";
 import { useAiSessionsStore } from "@/stores";
 import {
@@ -61,7 +62,7 @@ const { createSession, selectSession, updateSession, deleteSession } =
 
 // ── AI 配置 ───────────────────────────────────────────────────────────────
 const config = ref<AiConfig>(loadAiConfig());
-const configExpanded = ref(false);
+const settingsDialogShow = ref(false);
 function onConfigChange() {
   saveAiConfig(config.value);
 }
@@ -72,6 +73,7 @@ onMounted(async () => {
 
 // ── 侧边栏 ────────────────────────────────────────────────────────────────
 const sidebarCollapsed = ref(false);
+const sourceSearch = ref("");
 
 // ── 模式选择 ──────────────────────────────────────────────────────────────
 /** 工作模式：new = 从零创建，modify = 基于已有书源修改 */
@@ -87,6 +89,17 @@ const sourceOptions = computed(() =>
     value: s.fileName,
   })),
 );
+
+const filteredSources = computed(() => {
+  const keyword = sourceSearch.value.trim().toLowerCase();
+  if (!keyword) {
+    return props.sources;
+  }
+  return props.sources.filter((source) => {
+    const haystack = `${source.name} ${source.fileName}`.toLowerCase();
+    return haystack.includes(keyword);
+  });
+});
 
 // ── 用户输入 ──────────────────────────────────────────────────────────────
 const userPrompt = ref("");
@@ -196,16 +209,13 @@ function clearPrompt() {
 }
 
 // ── 内容标签页 ────────────────────────────────────────────────────────────
-const activePane = ref<"log" | "source" | "test" | "history">("log");
+const activePane = ref<"source" | "test" | "history">("source");
 
 // 日志自动滚动
 const logListRef = ref<HTMLElement | null>(null);
 watch(
   () => state.activities.length,
   () => {
-    if (activePane.value !== "log") {
-      return;
-    }
     nextTick(() => {
       if (logListRef.value) {
         logListRef.value.scrollTop = logListRef.value.scrollHeight;
@@ -250,7 +260,7 @@ function onSelectSession(id: string) {
     state.testResults = [...session.testResults];
     state.currentFileName = session.currentFileName;
     state.currentSourceCode = session.currentSourceCode;
-    activePane.value = "log";
+    activePane.value = session.currentSourceCode ? "source" : "test";
   }
 }
 
@@ -261,7 +271,7 @@ async function onNewSession() {
   } else {
     const session = createSession("new");
     clearAgentState();
-    activePane.value = "log";
+    activePane.value = "source";
     message.success(`已创建新草稿：${session.name}`);
   }
 }
@@ -279,7 +289,7 @@ async function createModifySession() {
     state.testResults = [];
     state.currentFileName = fileName;
     state.currentSourceCode = code;
-    activePane.value = "log";
+    activePane.value = "source";
     message.success(`已载入《${fileName.replace(/\.js$/, "")}》作为基础版本`);
     return session;
   } catch (e: unknown) {
@@ -318,7 +328,7 @@ async function startAgent(continueConversation = false) {
   }
 
   const sessionId = currentSession.value?.id ?? "";
-  activePane.value = "log";
+  activePane.value = "source";
 
   try {
     await runAiAgent(config.value, prompt, { sessionId, continueConversation });
@@ -420,6 +430,15 @@ function rollbackToDraft(version: number) {
   activePane.value = "source";
 }
 
+async function openInstalledSource(fileName: string) {
+  if (state.isRunning) {
+    return;
+  }
+  workMode.value = "modify";
+  selectedBaseSource.value = fileName;
+  await createModifySession();
+}
+
 // ── 删除会话 ──────────────────────────────────────────────────────────────
 function onDeleteSession(id: string) {
   dialog.warning({
@@ -500,286 +519,224 @@ const toolCallCount = computed(
 const sourceLineCount = computed(() =>
   displaySourceCode.value ? displaySourceCode.value.split(/\r?\n/).length : 0,
 );
+
+function isUserActivity(activity: AgentActivity): boolean {
+  return (
+    activity.type === "info" &&
+    (activity.content.startsWith("开始任务：") ||
+      activity.content.startsWith("继续对话："))
+  );
+}
+
+function isSystemActivity(activity: AgentActivity): boolean {
+  return activity.type === "info" && !isUserActivity(activity);
+}
+
+function getActivityLayoutClass(activity: AgentActivity): string {
+  if (isUserActivity(activity)) {
+    return "log-item--user";
+  }
+  if (isSystemActivity(activity)) {
+    return "log-item--system";
+  }
+  return "log-item--assistant";
+}
+
+function getChatContent(activity: AgentActivity): string {
+  const content = getDisplayContent(activity);
+  if (activity.type !== "info") {
+    return content;
+  }
+  return content.replace(/^(开始任务|继续对话)：/, "");
+}
+
+function getToolStatus(activity: AgentActivity): string {
+  if (activity.result) {
+    return "已完成";
+  }
+  return state.isRunning ? "执行中" : "无返回";
+}
 </script>
 
 <template>
   <div class="ai-workbench">
-    <!-- ── 左侧会话列表 ────────────────────────────────────── -->
-    <div
-      class="ai-sidebar"
-      :class="{ 'ai-sidebar--collapsed': sidebarCollapsed }"
-    >
-      <div class="sidebar-header">
-        <span v-if="!sidebarCollapsed" class="sidebar-title">工作草稿</span>
-        <n-button
-          size="tiny"
-          quaternary
-          class="sidebar-toggle"
-          :title="sidebarCollapsed ? '展开' : '收起'"
-          @click="sidebarCollapsed = !sidebarCollapsed"
+    <header class="workbench-topbar">
+      <div class="topbar-title">
+        <span class="topbar-title-main">AI 写书源</span>
+        <span class="topbar-title-sub">{{
+          displayFileName || currentSession?.name || "未选择草稿"
+        }}</span>
+      </div>
+      <div class="work-mode-toggle" role="group" aria-label="书源创作模式">
+        <button
+          type="button"
+          class="work-mode-button"
+          :class="{ 'work-mode-button--active': workMode === 'new' }"
+          :aria-pressed="workMode === 'new'"
+          @click="workMode = 'new'"
         >
-          {{ sidebarCollapsed ? "›" : "‹" }}
+          新建书源
+        </button>
+        <button
+          type="button"
+          class="work-mode-button"
+          :class="{ 'work-mode-button--active': workMode === 'modify' }"
+          :aria-pressed="workMode === 'modify'"
+          @click="workMode = 'modify'"
+        >
+          修改已有书源
+        </button>
+      </div>
+      <div class="topbar-stats">
+        <span :class="{ muted: !configReady }">配置 {{ configReady ? "就绪" : "待配置" }}</span>
+        <span>测试 {{ okTestCount }} / {{ errorTestCount }}</span>
+        <span>工具 {{ toolCallCount }}</span>
+        <span>代码 {{ sourceLineCount }} 行</span>
+      </div>
+      <div class="topbar-actions">
+        <n-tag v-if="config.model" size="small" round>{{ config.model }}</n-tag>
+        <n-button size="small" quaternary @click="settingsDialogShow = true">
+          <template #icon>
+            <n-icon><Settings /></n-icon>
+          </template>
+          设置
+        </n-button>
+        <n-button
+          v-if="state.isRunning"
+          size="small"
+          type="error"
+          @click="stopAiAgent()"
+        >
+          <template #icon>
+            <n-icon><Square /></n-icon>
+          </template>
+          停止
         </n-button>
       </div>
+    </header>
 
-      <template v-if="!sidebarCollapsed">
-        <div class="sidebar-actions">
-          <n-button size="small" type="primary" block @click="onNewSession">
-            <template #icon>
-              <n-icon><Plus /></n-icon>
-            </template>
-            新建草稿
+    <div
+      class="workbench-grid"
+      :class="{ 'workbench-grid--sidebar-collapsed': sidebarCollapsed }"
+    >
+      <aside
+        class="ai-sidebar"
+        :class="{ 'ai-sidebar--collapsed': sidebarCollapsed }"
+      >
+        <div class="sidebar-header">
+          <span v-if="!sidebarCollapsed" class="sidebar-title">Explorer</span>
+          <n-button
+            size="tiny"
+            quaternary
+            class="sidebar-toggle"
+            :title="sidebarCollapsed ? '展开' : '收起'"
+            @click="sidebarCollapsed = !sidebarCollapsed"
+          >
+            {{ sidebarCollapsed ? "›" : "‹" }}
           </n-button>
         </div>
 
-        <div class="session-list">
-          <div
-            v-for="s in sessions"
-            :key="s.id"
-            class="session-item"
-            :class="{ 'session-item--active': s.id === currentSession?.id }"
-            @click="onSelectSession(s.id)"
-          >
-            <div class="session-item-main">
-              <div class="session-item-name">{{ s.name }}</div>
-              <div class="session-item-meta">
-                <n-tag
-                  :type="sessionStatusType(s)"
+        <template v-if="!sidebarCollapsed">
+          <section class="sidebar-section">
+            <div class="sidebar-section-hd">
+              <span>工作草稿</span>
+              <n-button size="tiny" type="primary" @click="onNewSession">
+                <template #icon>
+                  <n-icon><Plus /></n-icon>
+                </template>
+                新建
+              </n-button>
+            </div>
+            <div class="session-list">
+              <div
+                v-for="s in sessions"
+                :key="s.id"
+                class="session-item"
+                :class="{ 'session-item--active': s.id === currentSession?.id }"
+                @click="onSelectSession(s.id)"
+              >
+                <div class="session-item-main">
+                  <div class="session-item-name">{{ s.name }}</div>
+                  <div class="session-item-meta">
+                    <n-tag
+                      :type="sessionStatusType(s)"
+                      size="tiny"
+                      round
+                      style="font-size: 10px; padding: 0 5px; height: 16px"
+                    >
+                      {{ sessionStatusLabel(s) }}
+                    </n-tag>
+                    <span class="session-item-time">{{
+                      formatDate(s.updatedAt)
+                    }}</span>
+                  </div>
+                </div>
+                <n-button
                   size="tiny"
-                  round
-                  style="font-size: 10px; padding: 0 5px; height: 16px"
+                  quaternary
+                  class="session-delete-btn"
+                  title="删除草稿"
+                  @click.stop="onDeleteSession(s.id)"
                 >
-                  {{ sessionStatusLabel(s) }}
-                </n-tag>
-                <span class="session-item-time">{{
-                  formatDate(s.updatedAt)
-                }}</span>
+                  ✕
+                </n-button>
+              </div>
+
+              <div v-if="sessions.length === 0" class="session-empty">
+                <p>还没有草稿</p>
+                <p>点击新建开始</p>
               </div>
             </div>
-            <n-button
+          </section>
+
+          <section class="sidebar-section sidebar-section--sources">
+            <div class="sidebar-section-hd">
+              <span>已安装书源</span>
+              <span class="sidebar-count">{{ filteredSources.length }}</span>
+            </div>
+            <n-input
+              v-model:value="sourceSearch"
               size="tiny"
-              quaternary
-              class="session-delete-btn"
-              title="删除草稿"
-              @click.stop="onDeleteSession(s.id)"
-            >
-              ✕
-            </n-button>
-          </div>
-
-          <div v-if="sessions.length === 0" class="session-empty">
-            <p>还没有草稿</p>
-            <p>点击"新建草稿"开始</p>
-          </div>
-        </div>
-      </template>
-
-      <template v-else>
-        <div class="sidebar-collapsed-sessions">
-          <div
-            v-for="s in sessions"
-            :key="s.id"
-            class="session-dot"
-            :class="{ 'session-dot--active': s.id === currentSession?.id }"
-            :title="s.name"
-            @click="onSelectSession(s.id)"
-          />
-        </div>
-      </template>
-    </div>
-
-    <!-- ── 主内容区 ────────────────────────────────────────── -->
-    <div class="ai-main">
-      <div class="ai-setup-panel">
-        <n-alert class="ai-feature-warning" type="warning" :show-icon="true">
-          AI 草稿会先保存在独立目录，测试通过后再保存为正式书源。
-          <br />
-          <small
-            >支持小说、漫画、视频、音频、API、CF/登录、加密签名、浏览器嗅探、Android
-            JSON 转换。
-            <a href="https://docs.legadoteam.org/prompt/" target="_blank"
-              >参考提示词</a
-            >
-          </small>
-        </n-alert>
-
-        <!-- 顶部工具栏 -->
-        <div class="main-toolbar">
-          <div class="work-mode-toggle" role="group" aria-label="书源创作模式">
-            <button
-              type="button"
-              class="work-mode-button"
-              :class="{ 'work-mode-button--active': workMode === 'new' }"
-              :aria-pressed="workMode === 'new'"
-              @click="workMode = 'new'"
-            >
-              新建书源
-            </button>
-            <button
-              type="button"
-              class="work-mode-button"
-              :class="{ 'work-mode-button--active': workMode === 'modify' }"
-              :aria-pressed="workMode === 'modify'"
-              @click="workMode = 'modify'"
-            >
-              修改已有书源
-            </button>
-          </div>
-          <div class="toolbar-spacer" />
-          <div class="toolbar-actions">
-            <n-tag v-if="config.model" size="small" round>{{
-              config.model
-            }}</n-tag>
-            <n-button
-              size="small"
-              quaternary
-              @click="configExpanded = !configExpanded"
-            >
-              <template #icon>
-                <n-icon><Settings /></n-icon>
-              </template>
-              配置
-            </n-button>
-            <n-button
-              v-if="state.isRunning"
-              size="small"
-              type="error"
-              @click="stopAiAgent()"
-            >
-              <template #icon>
-                <n-icon><Square /></n-icon>
-              </template>
-              停止
-            </n-button>
-          </div>
-        </div>
-
-        <!-- AI 配置面板（可折叠） -->
-        <div v-show="configExpanded" class="ai-config-panel">
-          <div class="cfg-grid">
-            <div class="cfg-row">
-              <span class="cfg-label">API 地址</span>
-              <n-input
-                v-model:value="config.apiUrl"
-                size="small"
-                placeholder="https://api.openai.com/v1"
-                class="cfg-input"
-                @update:value="onConfigChange"
-              />
-            </div>
-            <div class="cfg-row">
-              <span class="cfg-label">API 密钥</span>
-              <n-input
-                v-model:value="config.apiKey"
-                type="password"
-                size="small"
-                placeholder="sk-..."
-                class="cfg-input"
-                show-password-on="click"
-                @update:value="onConfigChange"
-              />
-            </div>
-            <div class="cfg-row">
-              <span class="cfg-label">模型名称</span>
-              <n-input
-                v-model:value="config.model"
-                size="small"
-                placeholder="gpt-4o / deepseek-chat / qwen-plus"
-                class="cfg-input"
-                @update:value="onConfigChange"
-              />
-            </div>
-            <div class="cfg-row">
-              <span class="cfg-label">最大步骤</span>
-              <n-input-number
-                v-model:value="config.maxSteps"
-                size="small"
-                :min="1"
-                :max="200"
-                :step="5"
-                class="cfg-input"
-                @update:value="onConfigChange"
-              />
-            </div>
-            <div class="cfg-row">
-              <span class="cfg-label">请求模式</span>
-              <n-radio-group
-                v-model:value="config.apiMode"
-                size="small"
-                @update:value="onConfigChange"
+              placeholder="搜索书源"
+              clearable
+              class="source-search"
+            />
+            <div class="source-list">
+              <button
+                v-for="source in filteredSources"
+                :key="source.fileName"
+                type="button"
+                class="source-item"
+                :class="{ 'source-item--active': source.fileName === selectedBaseSource }"
+                :disabled="state.isRunning"
+                @click="openInstalledSource(source.fileName)"
               >
-                <n-radio-button value="chat"
-                  >Chat Completions（推荐）</n-radio-button
-                >
-                <n-radio-button value="responses">Responses API</n-radio-button>
-              </n-radio-group>
+                <span class="source-item-name">{{ source.name || source.fileName }}</span>
+                <span class="source-item-file">{{ source.fileName }}</span>
+              </button>
+              <div v-if="filteredSources.length === 0" class="session-empty">
+                <p>没有匹配书源</p>
+              </div>
             </div>
-            <div class="cfg-row">
-              <span class="cfg-label">Temperature</span>
-              <n-input-number
-                v-model:value="config.temperature"
-                size="small"
-                :min="0"
-                :max="2"
-                :step="0.1"
-                :precision="1"
-                placeholder="留空=模型默认"
-                class="cfg-input"
-                :clearable="true"
-                @update:value="onConfigChange"
-              />
-            </div>
-          </div>
-          <p class="cfg-hint">
-            支持任意 OpenAI 兼容 API。第三方服务请选择 Chat Completions，仅
-            OpenAI 官方支持 Responses API。
-          </p>
-        </div>
+          </section>
+        </template>
 
-        <!-- 状态总览 -->
-        <div class="ai-status-strip">
-          <div
-            class="status-item"
-            :class="{ 'status-item--muted': !configReady }"
-          >
-            <n-icon class="status-icon"><Settings /></n-icon>
-            <div class="status-text">
-              <span>配置</span>
-              <strong>{{ configReady ? "就绪" : "待配置" }}</strong>
-            </div>
+        <template v-else>
+          <div class="sidebar-collapsed-sessions">
+            <div
+              v-for="s in sessions"
+              :key="s.id"
+              class="session-dot"
+              :class="{ 'session-dot--active': s.id === currentSession?.id }"
+              :title="s.name"
+              @click="onSelectSession(s.id)"
+            />
           </div>
-          <div
-            class="status-item"
-            :class="{ 'status-item--muted': !displayFileName }"
-          >
-            <n-icon class="status-icon"><FileCode2 /></n-icon>
-            <div class="status-text">
-              <span>草稿</span>
-              <strong>{{ displayFileName || "未创建" }}</strong>
-            </div>
-          </div>
-          <div class="status-item">
-            <n-icon class="status-icon"><Terminal /></n-icon>
-            <div class="status-text">
-              <span>测试</span>
-              <strong
-                >{{ okTestCount }} 通过 / {{ errorTestCount }} 失败</strong
-              >
-            </div>
-          </div>
-          <div class="status-item">
-            <n-icon class="status-icon"><Bot /></n-icon>
-            <div class="status-text">
-              <span>活动</span>
-              <strong
-                >{{ toolCallCount }} 工具 / {{ sourceLineCount }} 行</strong
-              >
-            </div>
-          </div>
-        </div>
+        </template>
+      </aside>
 
-        <!-- 草稿状态条 -->
-        <div v-if="currentSession" class="draft-status-bar">
+      <main class="workspace-panel">
+        <div class="workspace-titlebar">
           <div class="draft-info">
             <input
               v-if="editingName"
@@ -791,27 +748,26 @@ const sourceLineCount = computed(() =>
               @keydown.esc="editingName = false"
             />
             <button
-              v-else
+              v-else-if="currentSession"
               class="draft-name"
               title="点击编辑名称"
               @click="startEditName"
             >
               {{ currentSession.name }}
             </button>
+            <span v-else class="draft-name draft-name--placeholder">未选择草稿</span>
             <n-tag
               v-if="
-                currentSession.mode === 'modify' &&
+                currentSession?.mode === 'modify' &&
                 currentSession.baseSourceFileName
               "
               size="tiny"
               type="info"
               round
             >
-              基于《{{
-                currentSession.baseSourceFileName.replace(/\.js$/, "")
-              }}》
+              基于《{{ currentSession.baseSourceFileName.replace(/\.js$/, "") }}》
             </n-tag>
-            <n-tag :type="sessionStatusType(currentSession)" size="tiny" round>
+            <n-tag v-if="currentSession" :type="sessionStatusType(currentSession)" size="tiny" round>
               {{ sessionStatusLabel(currentSession) }}
             </n-tag>
           </div>
@@ -825,251 +781,51 @@ const sourceLineCount = computed(() =>
               <template #icon>
                 <n-icon><Save /></n-icon>
               </template>
-              保存为正式书源
+              保存
             </n-button>
             <n-button
-              v-if="currentSession.mode === 'modify'"
+              v-if="currentSession?.mode === 'modify'"
               size="small"
               type="warning"
               :disabled="!hasDraftCode || state.isRunning"
               @click="overwriteOriginal"
             >
-              覆盖原书源
+              覆盖
             </n-button>
-            <n-button
-              size="small"
-              quaternary
-              :disabled="!hasDraftCode"
-              @click="copySourceCode"
-            >
+            <n-button size="small" quaternary :disabled="!hasDraftCode" @click="copySourceCode">
               <template #icon>
                 <n-icon><Copy /></n-icon>
               </template>
-              复制代码
+              复制
             </n-button>
           </div>
         </div>
 
-        <!-- 输入区 -->
-        <div class="input-section">
-          <div v-if="workMode === 'modify'" class="source-selector-row">
-            <span class="source-selector-label">选择书源</span>
-            <n-select
-              v-model:value="selectedBaseSource"
-              :options="sourceOptions"
-              size="small"
-              placeholder="选择要修改的书源..."
-              filterable
-              clearable
-              class="source-selector-input"
-            />
-            <n-button
-              size="small"
-              :disabled="!selectedBaseSource || state.isRunning"
-              @click="createModifySession"
-            >
-              载入
-            </n-button>
-          </div>
-          <div
-            v-if="workMode === 'modify' && currentSession?.baseSourceCode"
-            class="base-source-notice"
+        <div class="pane-tabs">
+          <button
+            class="pane-tab"
+            :class="{ 'pane-tab--active': activePane === 'source' }"
+            @click="activePane = 'source'"
           >
-            已载入《{{
-              currentSession.baseSourceFileName?.replace(/\.js$/, "")
-            }}》作为基础版本，后续修改仅作用于当前草稿。
-          </div>
-          <div class="prompt-tools">
-            <div class="prompt-tool-row">
-              <span class="prompt-tool-label">任务模板</span>
-              <div class="prompt-chip-list">
-                <button
-                  v-for="template in visiblePromptTemplates"
-                  :key="template.label"
-                  type="button"
-                  class="prompt-chip prompt-chip--template"
-                  :disabled="state.isRunning"
-                  @click="applyPromptTemplate(template)"
-                >
-                  <n-icon><Sparkles /></n-icon>
-                  {{ template.label }}
-                </button>
-              </div>
-            </div>
-            <div class="prompt-tool-row">
-              <span class="prompt-tool-label">实体词</span>
-              <div class="prompt-chip-list">
-                <button
-                  v-for="token in ENTITY_CHIPS"
-                  :key="token"
-                  type="button"
-                  class="prompt-chip"
-                  :disabled="state.isRunning"
-                  @click="appendEntityToken(token)"
-                >
-                  {{ token }}
-                </button>
-              </div>
-            </div>
-          </div>
-          <div class="prompt-meta-row">
-            <span>任务描述</span>
-            <span>{{ promptCharCount }} 字</span>
-          </div>
-          <div class="prompt-row">
-            <n-input
-              v-model:value="userPrompt"
-              type="textarea"
-              :placeholder="
-                workMode === 'modify' ? MODIFY_PLACEHOLDER : NEW_PLACEHOLDER
-              "
-              :rows="3"
-              :autosize="{ minRows: 3, maxRows: 7 }"
-              :disabled="state.isRunning"
-              class="prompt-input"
-              @keydown.ctrl.enter.prevent="startAgent(hasConversationHistory)"
-            />
-            <div class="prompt-buttons">
-              <n-button
-                size="small"
-                quaternary
-                :disabled="state.isRunning || promptCharCount === 0"
-                @click="clearPrompt"
-              >
-                清空
-              </n-button>
-              <n-button
-                v-if="hasConversationHistory"
-                type="primary"
-                :loading="state.isRunning"
-                :disabled="!canStartAgent"
-                @click="startAgent(true)"
-              >
-                <template #icon>
-                  <n-icon><Play /></n-icon>
-                </template>
-                继续对话
-              </n-button>
-              <n-button
-                type="primary"
-                :loading="state.isRunning && !hasConversationHistory"
-                :disabled="!canStartAgent"
-                :ghost="hasConversationHistory"
-                @click="startAgent(false)"
-              >
-                <template #icon>
-                  <n-icon>
-                    <RotateCcw v-if="hasConversationHistory" />
-                    <Play v-else />
-                  </n-icon>
-                </template>
-                {{ hasConversationHistory ? "重新开始" : "开始创作" }}
-              </n-button>
-            </div>
-          </div>
+            当前草稿{{ displayFileName ? ` (${displayFileName})` : "" }}
+          </button>
+          <button
+            class="pane-tab"
+            :class="{ 'pane-tab--active': activePane === 'test' }"
+            @click="activePane = 'test'"
+          >
+            调试测试{{ displayTestResults.length ? ` (${displayTestResults.length})` : "" }}
+          </button>
+          <button
+            class="pane-tab"
+            :class="{ 'pane-tab--active': activePane === 'history' }"
+            @click="activePane = 'history'"
+          >
+            版本历史{{ currentSession?.drafts.length ? ` (${currentSession.drafts.length})` : "" }}
+          </button>
         </div>
-      </div>
 
-      <div class="ai-output-panel">
-        <!-- 主内容 Tab 区 -->
-        <div class="ai-body">
-          <div class="pane-tabs">
-            <button
-              class="pane-tab"
-              :class="{ 'pane-tab--active': activePane === 'log' }"
-              @click="activePane = 'log'"
-            >
-              AI 活动日志<span v-if="state.isRunning" class="tab-running-dot" />
-            </button>
-            <button
-              class="pane-tab"
-              :class="{ 'pane-tab--active': activePane === 'source' }"
-              @click="activePane = 'source'"
-            >
-              当前草稿{{ displayFileName ? ` (${displayFileName})` : "" }}
-            </button>
-            <button
-              class="pane-tab"
-              :class="{ 'pane-tab--active': activePane === 'test' }"
-              @click="activePane = 'test'"
-            >
-              调试测试{{
-                displayTestResults.length
-                  ? ` (${displayTestResults.length})`
-                  : ""
-              }}
-            </button>
-            <button
-              class="pane-tab"
-              :class="{ 'pane-tab--active': activePane === 'history' }"
-              @click="activePane = 'history'"
-            >
-              版本历史{{
-                currentSession?.drafts.length
-                  ? ` (${currentSession.drafts.length})`
-                  : ""
-              }}
-            </button>
-          </div>
-
-          <!-- AI 活动日志面板 -->
-          <div v-show="activePane === 'log'" ref="logListRef" class="log-list">
-            <div v-if="displayActivities.length === 0" class="empty-hint">
-              <n-icon class="empty-icon"><Bot /></n-icon>
-              <p>
-                {{
-                  currentSession
-                    ? "配置好 API 后，描述目标网站开始创作书源"
-                    : '选择一个草稿继续工作，或点击"新建草稿"开始'
-                }}
-              </p>
-            </div>
-            <div
-              v-for="activity in displayActivities"
-              :key="activity.id"
-              class="log-item"
-              :class="getActivityClass(activity.type)"
-            >
-              <div class="log-hd">
-                <span class="log-time">{{
-                  formatTime(activity.timestamp)
-                }}</span>
-                <span class="log-badge">{{
-                  ACTIVITY_LABEL[activity.type]
-                }}</span>
-                <span v-if="activity.toolName" class="log-tool">{{
-                  activity.toolName
-                }}</span>
-                <span
-                  v-if="
-                    activity.type === 'thinking' &&
-                    state.isRunning &&
-                    activity.id === state.activeThinkingId
-                  "
-                  class="log-spinner"
-                />
-              </div>
-              <template v-if="activity.type === 'tool_call'">
-                <div v-if="activity.args" class="log-section">
-                  <div class="log-section-label">参数</div>
-                  <pre class="log-pre log-pre--args">{{ activity.args }}</pre>
-                </div>
-                <div v-if="activity.result" class="log-section">
-                  <div class="log-section-label">返回值</div>
-                  <pre class="log-pre log-pre--result">{{
-                    truncateResult(activity.result)
-                  }}</pre>
-                </div>
-              </template>
-              <template v-else>
-                <pre v-if="activity.content" class="log-pre">{{
-                  getDisplayContent(activity)
-                }}</pre>
-              </template>
-            </div>
-          </div>
-
-          <!-- 当前草稿代码面板 -->
+        <div class="workspace-body">
           <div v-show="activePane === 'source'" class="source-panel">
             <div v-if="!displaySourceCode" class="empty-hint">
               <n-icon class="empty-icon"><FileCode2 /></n-icon>
@@ -1102,14 +858,12 @@ const sourceLineCount = computed(() =>
             </template>
           </div>
 
-          <!-- 调试测试面板 -->
           <AiTestPanel
             v-show="activePane === 'test'"
             :file-name="displayFileName"
             :ai-test-results="displayTestResults"
           />
 
-          <!-- 版本历史面板 -->
           <div v-show="activePane === 'history'" class="history-panel">
             <div
               v-if="!currentSession || currentSession.drafts.length === 0"
@@ -1135,12 +889,8 @@ const sourceLineCount = computed(() =>
                 <div class="history-item-hd">
                   <span class="history-version">v{{ draft.version }}</span>
                   <span class="history-filename">{{ draft.fileName }}</span>
-                  <span class="history-time">{{
-                    formatDate(draft.createdAt)
-                  }}</span>
-                  <span class="history-size"
-                    >{{ Math.ceil(draft.content.length / 1024) }} KB</span
-                  >
+                  <span class="history-time">{{ formatDate(draft.createdAt) }}</span>
+                  <span class="history-size">{{ Math.ceil(draft.content.length / 1024) }} KB</span>
                 </div>
                 <div class="history-item-actions">
                   <n-tag
@@ -1149,10 +899,7 @@ const sourceLineCount = computed(() =>
                     type="success"
                     round
                   >
-                    {{
-                      draft.testResults.filter((r) => r.status === "ok").length
-                    }}
-                    项通过
+                    {{ draft.testResults.filter((r) => r.status === "ok").length }} 项通过
                   </n-tag>
                   <n-tag
                     v-if="draft.testResults.some((r) => r.status === 'error')"
@@ -1160,11 +907,7 @@ const sourceLineCount = computed(() =>
                     type="error"
                     round
                   >
-                    {{
-                      draft.testResults.filter((r) => r.status === "error")
-                        .length
-                    }}
-                    项失败
+                    {{ draft.testResults.filter((r) => r.status === "error").length }} 项失败
                   </n-tag>
                   <n-button
                     size="tiny"
@@ -1182,8 +925,284 @@ const sourceLineCount = computed(() =>
             </div>
           </div>
         </div>
-      </div>
+      </main>
+
+      <aside class="chat-panel">
+        <div class="chat-header">
+          <div>
+            <span class="chat-title">AI 对话</span>
+            <span v-if="state.isRunning" class="chat-live">流式生成中</span>
+          </div>
+          <n-button
+            v-if="state.isRunning"
+            size="tiny"
+            type="error"
+            quaternary
+            @click="stopAiAgent()"
+          >
+            <template #icon>
+              <n-icon><Square /></n-icon>
+            </template>
+            停止
+          </n-button>
+        </div>
+
+        <div ref="logListRef" class="log-list">
+          <div v-if="displayActivities.length === 0" class="empty-hint">
+            <n-icon class="empty-icon"><Bot /></n-icon>
+            <p>
+              {{
+                currentSession
+                  ? "描述目标网站或选择左侧书源开始"
+                  : "选择一个草稿继续工作，或点击新建开始"
+              }}
+            </p>
+          </div>
+          <div
+            v-for="activity in displayActivities"
+            :key="activity.id"
+            class="log-item"
+            :class="[
+              getActivityClass(activity.type),
+              getActivityLayoutClass(activity),
+            ]"
+          >
+            <template v-if="activity.type === 'tool_call'">
+              <details class="tool-call-card">
+                <summary class="tool-call-summary">
+                  <span class="log-time">{{ formatTime(activity.timestamp) }}</span>
+                  <span class="log-badge">{{ ACTIVITY_LABEL[activity.type] }}</span>
+                  <span class="log-tool">{{ activity.toolName || "tool" }}</span>
+                  <span class="tool-call-status">{{ getToolStatus(activity) }}</span>
+                  <span class="tool-call-expand">详情</span>
+                </summary>
+                <div v-if="activity.args" class="log-section">
+                  <div class="log-section-label">参数</div>
+                  <pre class="log-pre log-pre--args">{{ activity.args }}</pre>
+                </div>
+                <div v-if="activity.result" class="log-section">
+                  <div class="log-section-label">返回值</div>
+                  <pre class="log-pre log-pre--result">{{ truncateResult(activity.result) }}</pre>
+                </div>
+              </details>
+            </template>
+            <template v-else>
+              <div class="log-bubble">
+                <div class="log-hd">
+                  <span class="log-time">{{ formatTime(activity.timestamp) }}</span>
+                  <span class="log-badge">{{
+                    isUserActivity(activity) ? "用户" : ACTIVITY_LABEL[activity.type]
+                  }}</span>
+                  <span
+                    v-if="
+                      activity.type === 'thinking' &&
+                      state.isRunning &&
+                      activity.id === state.activeThinkingId
+                    "
+                    class="log-spinner"
+                  />
+                </div>
+                <pre v-if="activity.content" class="log-pre">{{ getChatContent(activity) }}</pre>
+              </div>
+            </template>
+          </div>
+        </div>
+
+        <div class="chat-composer">
+          <div v-if="workMode === 'modify'" class="source-selector-row">
+            <n-select
+              v-model:value="selectedBaseSource"
+              :options="sourceOptions"
+              size="small"
+              placeholder="选择要修改的书源"
+              filterable
+              clearable
+              class="source-selector-input"
+            />
+            <n-button
+              size="small"
+              :disabled="!selectedBaseSource || state.isRunning"
+              @click="createModifySession"
+            >
+              载入
+            </n-button>
+          </div>
+          <div class="prompt-tools">
+            <div class="prompt-chip-list">
+              <button
+                v-for="template in visiblePromptTemplates"
+                :key="template.label"
+                type="button"
+                class="prompt-chip prompt-chip--template"
+                :disabled="state.isRunning"
+                @click="applyPromptTemplate(template)"
+              >
+                <n-icon><Sparkles /></n-icon>
+                {{ template.label }}
+              </button>
+            </div>
+            <div class="prompt-chip-list prompt-chip-list--entities">
+              <button
+                v-for="token in ENTITY_CHIPS"
+                :key="token"
+                type="button"
+                class="prompt-chip"
+                :disabled="state.isRunning"
+                @click="appendEntityToken(token)"
+              >
+                {{ token }}
+              </button>
+            </div>
+          </div>
+          <div class="prompt-meta-row">
+            <span>任务描述</span>
+            <span>{{ promptCharCount }} 字</span>
+          </div>
+          <n-input
+            v-model:value="userPrompt"
+            type="textarea"
+            :placeholder="workMode === 'modify' ? MODIFY_PLACEHOLDER : NEW_PLACEHOLDER"
+            :autosize="{ minRows: 3, maxRows: 7 }"
+            :disabled="state.isRunning"
+            class="prompt-input"
+            @keydown.ctrl.enter.prevent="startAgent(hasConversationHistory)"
+          />
+          <div class="prompt-buttons">
+            <n-button
+              size="small"
+              quaternary
+              :disabled="state.isRunning || promptCharCount === 0"
+              @click="clearPrompt"
+            >
+              清空
+            </n-button>
+            <n-button
+              v-if="hasConversationHistory"
+              type="primary"
+              :loading="state.isRunning"
+              :disabled="!canStartAgent"
+              @click="startAgent(true)"
+            >
+              <template #icon>
+                <n-icon><Play /></n-icon>
+              </template>
+              继续
+            </n-button>
+            <n-button
+              type="primary"
+              :loading="state.isRunning && !hasConversationHistory"
+              :disabled="!canStartAgent"
+              :ghost="hasConversationHistory"
+              @click="startAgent(false)"
+            >
+              <template #icon>
+                <n-icon>
+                  <RotateCcw v-if="hasConversationHistory" />
+                  <Play v-else />
+                </n-icon>
+              </template>
+              {{ hasConversationHistory ? "重开" : "开始" }}
+            </n-button>
+          </div>
+        </div>
+      </aside>
     </div>
+
+    <AppDialog
+      v-model:show="settingsDialogShow"
+      title="AI 设置"
+      width="720px"
+      class="ai-settings-dialog"
+    >
+      <div class="ai-config-panel">
+        <div class="cfg-grid">
+          <div class="cfg-row">
+            <span class="cfg-label">API 地址</span>
+            <n-input
+              v-model:value="config.apiUrl"
+              size="small"
+              placeholder="https://api.openai.com/v1"
+              class="cfg-input"
+              @update:value="onConfigChange"
+            />
+          </div>
+          <div class="cfg-row">
+            <span class="cfg-label">API 密钥</span>
+            <n-input
+              v-model:value="config.apiKey"
+              type="password"
+              size="small"
+              placeholder="sk-..."
+              class="cfg-input"
+              show-password-on="click"
+              @update:value="onConfigChange"
+            />
+          </div>
+          <div class="cfg-row">
+            <span class="cfg-label">模型名称</span>
+            <n-input
+              v-model:value="config.model"
+              size="small"
+              placeholder="gpt-4o / deepseek-chat / qwen-plus"
+              class="cfg-input"
+              @update:value="onConfigChange"
+            />
+          </div>
+          <div class="cfg-row">
+            <span class="cfg-label">最大步骤</span>
+            <n-input-number
+              v-model:value="config.maxSteps"
+              size="small"
+              :min="1"
+              :max="200"
+              :step="5"
+              class="cfg-input"
+              @update:value="onConfigChange"
+            />
+          </div>
+          <div class="cfg-row">
+            <span class="cfg-label">请求模式</span>
+            <n-radio-group
+              v-model:value="config.apiMode"
+              size="small"
+              @update:value="onConfigChange"
+            >
+              <n-radio-button value="chat">Chat Completions</n-radio-button>
+              <n-radio-button value="responses">Responses API</n-radio-button>
+            </n-radio-group>
+          </div>
+          <div class="cfg-row">
+            <span class="cfg-label">请求通道</span>
+            <n-radio-group
+              v-model:value="config.requestTransport"
+              size="small"
+              @update:value="onConfigChange"
+            >
+              <n-radio-button value="backend">后端 HTTP</n-radio-button>
+              <n-radio-button value="frontend">前端直连</n-radio-button>
+            </n-radio-group>
+          </div>
+          <div class="cfg-row">
+            <span class="cfg-label">Temperature</span>
+            <n-input-number
+              v-model:value="config.temperature"
+              size="small"
+              :min="0"
+              :max="2"
+              :step="0.1"
+              :precision="1"
+              placeholder="留空=模型默认"
+              class="cfg-input"
+              :clearable="true"
+              @update:value="onConfigChange"
+            />
+          </div>
+        </div>
+        <p class="cfg-hint">
+          后端 HTTP 通道通过本地代理流式转发，可复用应用代理和 TLS 设置；前端直连适合需要绕开后端代理时使用。
+        </p>
+      </div>
+    </AppDialog>
   </div>
 </template>
 
@@ -1760,10 +1779,10 @@ const sourceLineCount = computed(() =>
 .log-list {
   flex: 1;
   overflow-y: auto;
-  padding: 10px 14px;
+  padding: 14px 18px;
   display: flex;
   flex-direction: column;
-  gap: 5px;
+  gap: 8px;
 }
 .empty-hint {
   flex: 1;
@@ -1784,17 +1803,52 @@ const sourceLineCount = computed(() =>
   opacity: 0.5;
 }
 .log-item {
-  border-radius: var(--radius-sm);
-  padding: 6px 10px;
+  display: flex;
+  width: 100%;
+}
+.log-item--assistant {
+  justify-content: flex-start;
+}
+.log-item--user {
+  justify-content: flex-end;
+}
+.log-item--system {
+  justify-content: center;
+}
+.log-bubble {
+  max-width: min(76%, 880px);
+  min-width: 160px;
+  border-radius: 8px;
+  padding: 8px 10px;
   border: 1px solid var(--color-border);
   background: var(--color-surface-raised);
   transition: border-color var(--transition-fast);
+}
+.log-item--user .log-bubble {
+  background: color-mix(
+    in srgb,
+    var(--color-accent) 18%,
+    var(--color-surface-raised)
+  );
+  border-color: color-mix(in srgb, var(--color-accent) 38%, transparent);
+}
+.log-item--system .log-bubble {
+  max-width: min(70%, 720px);
+  min-width: 0;
+  padding: 4px 10px;
+  border-radius: 999px;
+  background: var(--color-surface-hover);
+  opacity: 0.86;
 }
 .log-hd {
   display: flex;
   align-items: center;
   gap: 6px;
   flex-wrap: wrap;
+  margin-bottom: 3px;
+}
+.log-item--system .log-hd {
+  display: none;
 }
 .log-time {
   font-size: 11px;
@@ -1816,6 +1870,10 @@ const sourceLineCount = computed(() =>
   font-family: monospace;
   color: var(--color-accent);
   font-weight: 600;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 .log-spinner {
   display: inline-block;
@@ -1833,7 +1891,7 @@ const sourceLineCount = computed(() =>
   }
 }
 .log-section {
-  margin-top: 6px;
+  margin-top: 8px;
 }
 .log-section-label {
   font-size: 10px;
@@ -1844,7 +1902,7 @@ const sourceLineCount = computed(() =>
   font-weight: 600;
 }
 .log-pre {
-  margin: 4px 0 0;
+  margin: 0;
   font-size: 12px;
   font-family: "Consolas", "Menlo", monospace;
   white-space: pre-wrap;
@@ -1855,11 +1913,60 @@ const sourceLineCount = computed(() =>
   overflow-y: auto;
   padding: 0;
 }
+.log-item--system .log-pre {
+  font-size: 11px;
+  line-height: 1.4;
+  color: var(--color-text-secondary);
+  text-align: center;
+}
 .log-pre--args {
   color: var(--color-text-secondary);
 }
 .log-pre--result {
   color: var(--color-text-primary);
+}
+.tool-call-card {
+  width: min(420px, 64%);
+  border: 1px solid color-mix(in srgb, var(--color-accent) 28%, transparent);
+  border-radius: 7px;
+  background: color-mix(
+    in srgb,
+    var(--color-accent) 5%,
+    var(--color-surface-raised)
+  );
+}
+.tool-call-summary {
+  height: 30px;
+  padding: 0 10px;
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  cursor: pointer;
+  list-style: none;
+}
+.tool-call-summary::-webkit-details-marker {
+  display: none;
+}
+.tool-call-status {
+  flex-shrink: 0;
+  font-size: 11px;
+  color: var(--color-text-muted);
+}
+.tool-call-expand {
+  margin-left: auto;
+  flex-shrink: 0;
+  font-size: 11px;
+  color: var(--color-text-muted);
+}
+.tool-call-card[open] .tool-call-expand {
+  color: var(--color-accent);
+}
+.tool-call-card[open] {
+  width: min(760px, 82%);
+  padding-bottom: 8px;
+}
+.tool-call-card[open] .log-section {
+  padding: 0 10px;
 }
 .log-item--thinking {
   --badge-bg: var(--color-surface-hover);
@@ -1868,21 +1975,19 @@ const sourceLineCount = computed(() =>
 .log-item--tool-call {
   --badge-bg: color-mix(in srgb, var(--color-accent) 15%, transparent);
   --badge-color: var(--color-accent);
-  border-color: color-mix(in srgb, var(--color-accent) 30%, transparent);
-  background: color-mix(
-    in srgb,
-    var(--color-accent) 5%,
-    var(--color-surface-raised)
-  );
 }
 .log-item--message {
   --badge-bg: color-mix(in srgb, var(--color-warning) 20%, transparent);
   --badge-color: var(--color-warning);
+}
+.log-item--message .log-bubble {
   border-color: color-mix(in srgb, var(--color-warning) 35%, transparent);
 }
 .log-item--error {
   --badge-bg: color-mix(in srgb, var(--color-danger) 15%, transparent);
   --badge-color: var(--color-danger);
+}
+.log-item--error .log-bubble {
   border-color: color-mix(in srgb, var(--color-danger) 30%, transparent);
   background: color-mix(
     in srgb,
@@ -1893,7 +1998,6 @@ const sourceLineCount = computed(() =>
 .log-item--info {
   --badge-bg: var(--color-surface-hover);
   --badge-color: var(--color-text-secondary);
-  opacity: 0.85;
 }
 
 /* ── 书源代码面板 ── */
@@ -2243,6 +2347,15 @@ const sourceLineCount = computed(() =>
     overflow: visible;
     padding: 10px;
   }
+  .log-bubble,
+  .tool-call-card,
+  .tool-call-card[open] {
+    width: auto;
+    max-width: 92%;
+  }
+  .log-item--system .log-bubble {
+    max-width: 96%;
+  }
   .source-panel {
     min-height: 520px;
   }
@@ -2294,6 +2407,362 @@ const sourceLineCount = computed(() =>
   .prompt-buttons :deep(.n-button),
   .source-toolbar-actions :deep(.n-button) {
     flex-basis: 100%;
+  }
+}
+
+/* ── Workbench 重构布局 ── */
+.ai-workbench {
+  flex-direction: column;
+  background: var(--color-surface);
+}
+.workbench-topbar {
+  height: 46px;
+  flex: 0 0 46px;
+  display: grid;
+  grid-template-columns: minmax(180px, 1fr) auto minmax(280px, auto) auto;
+  align-items: center;
+  gap: 12px;
+  padding: 0 14px;
+  border-bottom: 1px solid var(--color-border);
+  background: var(--color-surface-raised);
+  min-width: 0;
+}
+.topbar-title {
+  display: flex;
+  align-items: baseline;
+  gap: 10px;
+  min-width: 0;
+}
+.topbar-title-main {
+  flex-shrink: 0;
+  color: var(--color-text-primary);
+  font-size: 14px;
+  font-weight: 700;
+}
+.topbar-title-sub {
+  min-width: 0;
+  overflow: hidden;
+  color: var(--color-text-muted);
+  font-size: 12px;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.topbar-stats {
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 10px;
+  min-width: 0;
+  color: var(--color-text-secondary);
+  font-size: 11px;
+  white-space: nowrap;
+}
+.topbar-stats .muted {
+  color: var(--color-warning);
+}
+.topbar-actions {
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 6px;
+  min-width: 0;
+}
+.workbench-grid {
+  flex: 1;
+  display: grid;
+  grid-template-columns: 248px minmax(460px, 1fr) clamp(330px, 28vw, 430px);
+  min-height: 0;
+  overflow: hidden;
+}
+.workbench-grid--sidebar-collapsed {
+  grid-template-columns: 36px minmax(460px, 1fr) clamp(330px, 28vw, 430px);
+}
+.ai-sidebar {
+  width: auto;
+  min-width: 0;
+  background: var(--color-surface);
+}
+.ai-sidebar--collapsed {
+  width: auto;
+  min-width: 36px;
+}
+.sidebar-header {
+  height: 38px;
+  padding: 0 10px;
+}
+.sidebar-section {
+  display: flex;
+  flex-direction: column;
+  min-height: 0;
+  border-bottom: 1px solid var(--color-border);
+}
+.sidebar-section:first-of-type {
+  flex: 0 0 min(250px, 36%);
+}
+.sidebar-section--sources {
+  flex: 1;
+  border-bottom: none;
+}
+.sidebar-section-hd {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  padding: 8px 10px;
+  color: var(--color-text-secondary);
+  font-size: 11px;
+  font-weight: 700;
+  text-transform: uppercase;
+}
+.sidebar-count {
+  color: var(--color-text-muted);
+  font-family: "Consolas", "Menlo", monospace;
+  font-weight: 500;
+}
+.session-list,
+.source-list {
+  flex: 1;
+  min-height: 0;
+  overflow-y: auto;
+  padding: 2px 6px 8px;
+}
+.session-item {
+  min-height: 46px;
+  margin: 1px 0;
+  border-radius: 6px;
+  padding: 6px 8px;
+}
+.session-item--active {
+  background: color-mix(in srgb, var(--color-accent) 14%, transparent);
+}
+.source-search {
+  padding: 0 8px 8px;
+}
+.source-item {
+  width: 100%;
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 2px;
+  min-height: 42px;
+  padding: 6px 8px;
+  border: 0;
+  border-radius: 6px;
+  background: transparent;
+  color: var(--color-text-primary);
+  cursor: pointer;
+  text-align: left;
+}
+.source-item:hover:not(:disabled),
+.source-item--active {
+  background: var(--color-surface-hover);
+}
+.source-item:disabled {
+  cursor: not-allowed;
+  opacity: 0.55;
+}
+.source-item-name,
+.source-item-file {
+  max-width: 100%;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.source-item-name {
+  font-size: 12px;
+  font-weight: 600;
+}
+.source-item-file {
+  color: var(--color-text-muted);
+  font-family: "Consolas", "Menlo", monospace;
+  font-size: 10px;
+}
+.workspace-panel,
+.chat-panel {
+  min-width: 0;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+  background: var(--color-surface);
+}
+.workspace-panel {
+  border-right: 1px solid var(--color-border);
+}
+.workspace-titlebar {
+  min-height: 44px;
+  flex: 0 0 auto;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  padding: 7px 12px;
+  border-bottom: 1px solid var(--color-border);
+  background: var(--color-surface-raised);
+}
+.draft-name--placeholder {
+  color: var(--color-text-muted);
+  text-decoration: none;
+}
+.pane-tabs {
+  height: 38px;
+  background: var(--color-surface);
+}
+.pane-tab {
+  padding: 0 14px;
+}
+.workspace-body {
+  flex: 1;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+}
+.source-panel,
+.history-panel {
+  min-height: 0;
+}
+.source-toolbar {
+  min-height: 38px;
+}
+.source-code {
+  background: color-mix(in srgb, var(--color-surface) 92%, #000);
+}
+.chat-panel {
+  background: color-mix(in srgb, var(--color-surface) 96%, #000);
+}
+.chat-header {
+  height: 42px;
+  flex: 0 0 42px;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  padding: 0 12px;
+  border-bottom: 1px solid var(--color-border);
+  background: var(--color-surface-raised);
+}
+.chat-title {
+  display: block;
+  color: var(--color-text-primary);
+  font-size: 13px;
+  font-weight: 700;
+}
+.chat-live {
+  display: block;
+  color: var(--color-accent);
+  font-size: 11px;
+}
+.chat-panel .log-list {
+  flex: 1;
+  min-height: 0;
+  padding: 12px;
+  overflow-y: auto;
+}
+.chat-panel .log-bubble {
+  max-width: 88%;
+}
+.chat-panel .tool-call-card {
+  width: min(320px, 88%);
+}
+.chat-panel .tool-call-card[open] {
+  width: 94%;
+}
+.chat-composer {
+  flex: 0 0 auto;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  padding: 10px 12px 12px;
+  border-top: 1px solid var(--color-border);
+  background: var(--color-surface-raised);
+}
+.chat-composer .source-selector-row {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+}
+.chat-composer .prompt-tools {
+  padding: 0;
+  border: 0;
+  background: transparent;
+}
+.chat-composer .prompt-chip-list {
+  flex-wrap: nowrap;
+  overflow-x: auto;
+  padding-bottom: 2px;
+}
+.chat-composer .prompt-chip-list--entities {
+  opacity: 0.9;
+}
+.chat-composer .prompt-chip {
+  flex: 0 0 auto;
+}
+.chat-composer .prompt-buttons {
+  display: grid;
+  grid-template-columns: auto 1fr 1fr;
+  gap: 6px;
+}
+.ai-config-panel {
+  padding: 0;
+  border-bottom: 0;
+}
+.ai-settings-dialog .cfg-grid {
+  gap: 10px;
+}
+
+@media (max-width: 1280px) {
+  .workbench-grid {
+    grid-template-columns: 220px minmax(380px, 1fr) 340px;
+  }
+  .topbar-stats {
+    display: none;
+  }
+}
+
+@media (max-width: 980px) {
+  .workbench-topbar {
+    height: auto;
+    grid-template-columns: minmax(0, 1fr);
+    padding: 8px 10px;
+  }
+  .workbench-grid {
+    grid-template-columns: 1fr;
+    overflow-y: auto;
+  }
+  .ai-sidebar,
+  .workspace-panel,
+  .chat-panel {
+    border-right: none;
+    border-bottom: 1px solid var(--color-border);
+    overflow: visible;
+  }
+  .sidebar-section:first-of-type {
+    flex-basis: auto;
+  }
+  .session-list,
+  .source-list {
+    max-height: 220px;
+  }
+  .workspace-panel,
+  .chat-panel {
+    min-height: 560px;
+  }
+}
+
+@media (max-width: 560px) {
+  .work-mode-toggle {
+    width: 100%;
+  }
+  .workspace-titlebar,
+  .draft-actions,
+  .topbar-actions,
+  .chat-composer .prompt-buttons {
+    display: flex;
+    flex-wrap: wrap;
+  }
+  .draft-actions :deep(.n-button),
+  .chat-composer .prompt-buttons :deep(.n-button) {
+    flex: 1 1 120px;
   }
 }
 </style>

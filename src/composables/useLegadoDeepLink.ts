@@ -1,3 +1,4 @@
+// useLegadoDeepLink — 解析 Legado 深链接并注册原生/应用内链接监听。
 import { isTauri, isHarmonyNative } from './useEnv';
 import { eventListen } from './useEventBus';
 
@@ -9,6 +10,10 @@ export type LegadoDeepLinkPayload =
   | { type: 'booksource'; url: string }
   | { type: 'repo'; url: string; name?: string }
   | { type: 'plugin'; url: string };
+
+export type LegadoInstallTarget =
+  | LegadoDeepLinkPayload
+  | { type: 'unknown' };
 
 /** 将原始 payload 字符串规范化为 https?:// URL，至多解码两次 */
 function normalizeHttpUrl(payload: string): string {
@@ -102,6 +107,72 @@ export function parseLegadoDeepLink(rawUrl: string): LegadoDeepLinkPayload {
     throw new Error('书源链接缺少 url 参数');
   }
   return { type: 'booksource', url: normalizeHttpUrl(payload) };
+}
+
+function getHttpPathName(rawUrl: string): string {
+  try {
+    const url = new URL(normalizeHttpUrl(rawUrl));
+    return decodeURIComponent(url.pathname).toLowerCase();
+  } catch {
+    return '';
+  }
+}
+
+function looksLikeRepositoryUrl(rawUrl: string): boolean {
+  const path = getHttpPathName(rawUrl);
+  const fileName = path.split('/').filter(Boolean).pop() ?? '';
+  return fileName === 'repository.json';
+}
+
+function looksLikePluginUrl(rawUrl: string): boolean {
+  const path = getHttpPathName(rawUrl);
+  const fileName = path.split('/').filter(Boolean).pop() ?? '';
+  return fileName.endsWith('.user.js');
+}
+
+/**
+ * 安装书源入口的兜底分类。
+ *
+ * 正常深链接会先由 parseLegadoDeepLink 分流；这里用于 Java/WebView 等特殊
+ * 环境把其它安装链接误送到书源安装弹窗时，按明确 URL 规则转发到对应入口。
+ */
+export function classifyLegadoInstallTarget(rawUrl: string): LegadoInstallTarget {
+  const input = rawUrl.trim();
+  if (!input) {
+    return { type: 'unknown' };
+  }
+
+  try {
+    const parsed = parseLegadoDeepLink(input);
+    if (input.toLowerCase().startsWith(LEGADO_SCHEME)) {
+      if (parsed.type === 'booksource' && looksLikeRepositoryUrl(parsed.url)) {
+        return { type: 'repo', url: parsed.url };
+      }
+      if (parsed.type === 'booksource' && looksLikePluginUrl(parsed.url)) {
+        return { type: 'plugin', url: parsed.url };
+      }
+      return parsed;
+    }
+  } catch {
+    // Fallback rules below handle plain HTTP(S) links only.
+  }
+
+  if (!/^https?:\/\//i.test(input)) {
+    return { type: 'unknown' };
+  }
+  let url: string;
+  try {
+    url = normalizeHttpUrl(input);
+  } catch {
+    return { type: 'unknown' };
+  }
+  if (looksLikeRepositoryUrl(url)) {
+    return { type: 'repo', url };
+  }
+  if (looksLikePluginUrl(url)) {
+    return { type: 'plugin', url };
+  }
+  return { type: 'booksource', url };
 }
 
 /** @deprecated 使用 parseLegadoDeepLink 代替 */

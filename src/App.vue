@@ -50,6 +50,7 @@ import {
   useAppConfigStore,
   useBackStackStore,
   useNavigationStore,
+  usePreferencesStore,
   usePrivacyModeStore,
   useReaderSettingsStore,
   useReaderUiStore,
@@ -118,9 +119,13 @@ const mobileNavItems: NavItem[] = [
   { id: "settings", icon: "settings", label: "设置" },
 ];
 
-const navItems = computed(() =>
-  isMobile.value ? mobileNavItems : desktopNavItems,
-);
+const prefStore = usePreferencesStore();
+const navItems = computed(() => {
+  const base = isMobile.value ? mobileNavItems : desktopNavItems;
+  const bookSourceVisible =
+    prefStore.devTools.fullModeEnabled || prefStore.devTools.bookSourceUnlocked;
+  return bookSourceVisible ? base : base.filter((n) => n.id !== "booksource");
+});
 const activeNavLabel = computed(
   () =>
     navItems.value.find((n) => n.id === navigationStore.activeView)?.label ??
@@ -854,9 +859,7 @@ const latestLogMessage = computed(
     "bottomnav";
   grid-template-rows:
     var(--safe-top)
-    1fr calc(
-      var(--bottomnav-h) + var(--safe-bottom)
-    );
+    1fr calc(var(--bottomnav-h) + var(--safe-bottom));
   grid-template-columns: 1fr;
 }
 

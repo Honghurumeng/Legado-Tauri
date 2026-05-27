@@ -2,8 +2,8 @@
 import { onMounted, onUnmounted, ref } from "vue";
 import { eventEmit } from "@/composables/useEventBus";
 import {
+  classifyLegadoInstallTarget,
   installLegadoDeepLinkListener,
-  parseLegadoDeepLink,
 } from "@/composables/useLegadoDeepLink";
 import { useNavigationStore } from "@/stores";
 import BookSourceInstallDialog from "./BookSourceInstallDialog.vue";
@@ -31,9 +31,7 @@ function dispatchRepoEvent(url: string, name?: string) {
 }
 
 function dispatchPluginEvent(url: string) {
-  window.dispatchEvent(
-    new CustomEvent<{ url: string }>("app:install-plugin", { detail: { url } }),
-  );
+  navigationStore.navigateToPluginInstall(url);
 }
 
 function enqueueLinks(urls: string[]) {
@@ -41,10 +39,8 @@ function enqueueLinks(urls: string[]) {
     if (!raw?.trim()) {
       continue;
     }
-    let payload;
-    try {
-      payload = parseLegadoDeepLink(raw);
-    } catch {
+    const payload = classifyLegadoInstallTarget(raw);
+    if (payload.type === "unknown") {
       // 无法识别类型时当书源处理，错误留给 openNext 展示
       queue.push(raw);
       continue;
@@ -72,15 +68,19 @@ function openNext() {
   currentRawLink.value = next;
   currentParseError.value = "";
   currentDownloadUrl.value = "";
-  try {
-    const result = parseLegadoDeepLink(next);
-    if (result.type === "booksource") {
-      currentDownloadUrl.value = result.url;
-    } else {
-      currentParseError.value = "不是书源链接";
-    }
-  } catch (e: unknown) {
-    currentParseError.value = e instanceof Error ? e.message : String(e);
+  const result = classifyLegadoInstallTarget(next);
+  if (result.type === "booksource") {
+    currentDownloadUrl.value = result.url;
+  } else if (result.type === "repo") {
+    dispatchRepoEvent(result.url, result.name);
+    void openNext();
+    return;
+  } else if (result.type === "plugin") {
+    dispatchPluginEvent(result.url);
+    void openNext();
+    return;
+  } else {
+    currentParseError.value = "不是可识别的 Legado 安装链接";
   }
   show.value = true;
 }

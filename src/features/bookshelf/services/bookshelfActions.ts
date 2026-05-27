@@ -8,6 +8,7 @@ import {
   type ChapterItem,
   type ShelfBook,
 } from "@/stores";
+import { usePreferencesStore } from "@/stores/preferences";
 import { useBookshelfReaderStore } from "../stores/bookshelfReader";
 import { useBookshelfUiStore } from "../stores/bookshelfUi";
 
@@ -19,6 +20,7 @@ export function useBookshelfActions(message: MessageApi) {
   const uiStore = useBookshelfUiStore();
   const readerStore = useBookshelfReaderStore();
   const shelfGroups = useShelfGroups();
+  const preferencesStore = usePreferencesStore();
 
   function syncOpenReaderBookInfo(bookId: string) {
     readerStore.syncOpenReaderBookInfo(
@@ -123,6 +125,10 @@ export function useBookshelfActions(message: MessageApi) {
       return;
     }
     if (key === "export") {
+      if (!preferencesStore.devTools.fullModeEnabled) {
+        message.warning("需要解锁完全体模式后才能导出书籍");
+        return;
+      }
       uiStore.exportBook = book;
       try {
         uiStore.exportCachedChapters = await bookshelfStore.getChapters(

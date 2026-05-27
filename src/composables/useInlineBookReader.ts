@@ -1,3 +1,6 @@
+/**
+ * useInlineBookReader — 发现/搜索详情页内联打开阅读器，并处理目录加载与隐私状态同步。
+ */
 import { useMessage } from 'naive-ui';
 import { ref, watch, type Ref } from 'vue';
 import type { ChapterGroup, ChapterItem } from '@/stores';
@@ -98,7 +101,7 @@ export function useInlineBookReader(options: UseInlineBookReaderOptions) {
       (payload.sourceType === 'music' || payload.sourceType === 'video')
     ) {
       // TODO: 视频/音乐功能暂时屏蔽，待启用时删除此块并取消下方注释
-      message.warning('该功能暂时无法使用');
+      message.warning('需要解锁完全体模式后才能使用音频/视频播放');
       return;
     }
     // if (payload.sourceType === 'music') {

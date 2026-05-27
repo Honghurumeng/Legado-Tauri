@@ -3,7 +3,7 @@
 import { Folder, Search, Code2 } from "lucide-vue-next";
 import { useMessage, type DropdownOption } from "naive-ui";
 import { storeToRefs } from "pinia";
-import { ref, computed, onMounted, onUnmounted } from "vue";
+import { ref, computed, nextTick, onMounted, onUnmounted, watch } from "vue";
 import JavaScriptHighlightEditor from "@/components/base/JavaScriptHighlightEditor.vue";
 import ExampleCard from "@/components/extensions/ExampleCard.vue";
 import ExtensionCard from "@/components/extensions/ExtensionCard.vue";
@@ -17,6 +17,7 @@ import { invokeWithTimeout } from "@/composables/useInvoke";
 import { useOverlay } from "@/composables/useOverlay";
 import {
   useFrontendPluginsStore,
+  useNavigationStore,
   type PluginSettingValue,
   type ResolvedPluginSettingField,
 } from "@/stores";
@@ -39,6 +40,8 @@ type ExtensionListItem = ExtensionMeta & { builtin?: boolean };
 
 const message = useMessage();
 const dialog = useDialog();
+const navigationStore = useNavigationStore();
+const { pluginDeepLinkRequest } = storeToRefs(navigationStore);
 
 const activeTab = ref<"installed" | "examples">("installed");
 const extensions = ref<ExtensionListItem[]>([]);
@@ -681,6 +684,26 @@ function handleInstallPluginEvent(e: Event) {
   urlImportUrl.value = url;
   showUrlImport.value = true;
 }
+
+async function handlePluginDeepLinkRequest() {
+  const request = pluginDeepLinkRequest.value;
+  if (!request) {
+    return;
+  }
+  activeTab.value = "installed";
+  await nextTick();
+  urlImportUrl.value = request.url;
+  showUrlImport.value = true;
+  navigationStore.consumePluginDeepLinkRequest(request.id);
+}
+
+watch(
+  () => pluginDeepLinkRequest.value?.id,
+  () => {
+    void handlePluginDeepLinkRequest();
+  },
+  { flush: "post", immediate: true },
+);
 
 onMounted(async () => {
   await loadExtensions();

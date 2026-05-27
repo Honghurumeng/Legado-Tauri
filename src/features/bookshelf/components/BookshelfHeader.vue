@@ -14,12 +14,14 @@ import {
   Sparkles,
   Pencil,
   Settings2,
+  Unlock,
 } from 'lucide-vue-next';
 import { computed } from 'vue';
 import type { CardSizeKey } from '@/composables/useViewCardDensity';
 import type { ShelfGroup } from '@/types/shelfGroup';
 import MobileToolbarMenu from '@/components/layout/MobileToolbarMenu.vue';
 import { isMobile } from '@/composables/useEnv';
+import { usePreferencesStore } from '@/stores/preferences';
 
 const props = defineProps<{
   bookCount: number;
@@ -48,6 +50,7 @@ const emit = defineEmits<{
 }>();
 
 const MOBILE_COLS_OPTIONS = [2, 3, 4, 5, 6];
+const prefStore = usePreferencesStore();
 
 // 启用的分组（排除禁用的）
 const enabledGroups = computed(() => {
@@ -128,7 +131,17 @@ function handleMobileMenuSelect(key: string) {
   <div class="bs-header">
     <div class="bs-header__row">
       <div>
-        <h1 class="bs-header__title">书架</h1>
+        <div class="bs-header__title-row">
+          <h1 class="bs-header__title">书架</h1>
+          <span
+            v-if="prefStore.devTools.fullModeEnabled"
+            class="bs-header__full-mode"
+            title="完全体模式已激活"
+          >
+            <Unlock :size="13" :stroke-width="2.4" />
+            <span>完全体模式</span>
+          </span>
+        </div>
         <p class="bs-header__sub">
           {{ privacyModeEnabled ? '隐私模式' : `${bookCount} 本书籍` }}
         </p>
@@ -271,11 +284,31 @@ function handleMobileMenuSelect(key: string) {
   align-items: center;
   gap: 8px;
 }
+.bs-header__title-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-width: 0;
+}
 .bs-header__title {
   font-size: var(--fs-20);
   font-weight: var(--fw-bold);
   color: var(--color-text);
   margin: 0 0 2px;
+}
+.bs-header__full-mode {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  height: 22px;
+  padding: 0 8px;
+  border: 1px solid color-mix(in srgb, var(--color-accent) 45%, transparent);
+  border-radius: 999px;
+  color: var(--color-accent);
+  background: color-mix(in srgb, var(--color-accent) 10%, transparent);
+  font-size: var(--fs-12);
+  font-weight: var(--fw-semibold);
+  white-space: nowrap;
 }
 .bs-header__sub {
   font-size: var(--fs-13);

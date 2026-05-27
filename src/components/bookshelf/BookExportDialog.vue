@@ -1,5 +1,6 @@
+<!-- BookExportDialog — 书架书籍导出对话框，负责导出前缓存、保存路径和进度反馈。 -->
 <script setup lang="ts">
-import { X, Info, Loader2, CheckCircle2, AlertCircle } from 'lucide-vue-next';
+import { X, Info, Loader2, CheckCircle2, AlertCircle, Lock, Unlock } from 'lucide-vue-next';
 import { NModal, NCard, NButton, NProgress, NRadio, NRadioGroup } from 'naive-ui';
 import { storeToRefs } from 'pinia';
 import { ref, computed, watch, nextTick, onBeforeUnmount } from 'vue';
@@ -8,6 +9,7 @@ import { isHarmonyNative, isTauri, platform } from '@/composables/useEnv';
 import { invokeWithTimeout } from '@/composables/useInvoke';
 import { useOverlay } from '@/composables/useOverlay';
 import { usePrefetchStore, useAppConfigStore } from '@/stores';
+import { usePreferencesStore } from '@/stores/preferences';
 import { base64ToBytes, pickExportPath, writeExportFile } from '@/utils/exportFile';
 
 const props = defineProps<{
@@ -34,6 +36,7 @@ const logEl = ref<HTMLDivElement | null>(null);
 
 const prefetchStore = usePrefetchStore();
 const appConfigStore = useAppConfigStore();
+const prefStore = usePreferencesStore();
 const { manualRunning, manualProgress } = storeToRefs(prefetchStore);
 const { startManualPrefetch, cancelManualPrefetch } = prefetchStore;
 
@@ -53,6 +56,8 @@ const isRunning = computed(
 );
 
 const canClose = computed(() => !isRunning.value);
+const fullModeEnabled = computed(() => prefStore.devTools.fullModeEnabled);
+const fullModeIcon = computed(() => (fullModeEnabled.value ? Unlock : Lock));
 const isTauriMobile = computed(() => {
   const value = platform.value.toLowerCase();
   return isTauri && (value === 'android' || value === 'ios');
@@ -140,6 +145,11 @@ function sanitizeFilename(name: string): string {
 
 async function startExport() {
   if (isRunning.value) {
+    return;
+  }
+  if (!fullModeEnabled.value) {
+    errorMsg.value = '需要解锁完全体模式后才能导出书籍';
+    phase.value = 'error';
     return;
   }
   const chapters = props.chapters;
@@ -462,7 +472,10 @@ onBeforeUnmount(() => {
           <template v-if="phase === 'idle'">
             <NButton @click="handleClose">取消</NButton>
             <NButton type="primary" @click="startExport" :disabled="!chapters.length">
-              开始导出
+              <template #icon>
+                <component :is="fullModeIcon" :size="14" />
+              </template>
+              {{ fullModeEnabled ? '开始导出' : '解锁后导出' }}
             </NButton>
           </template>
 

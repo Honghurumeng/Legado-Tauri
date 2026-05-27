@@ -8,6 +8,8 @@ import {
   Pencil,
   X,
   Download,
+  ExternalLink,
+  ShieldCheck,
 } from 'lucide-vue-next';
 import { storeToRefs } from 'pinia';
 import { ref, computed } from 'vue';
@@ -71,6 +73,7 @@ const supportCache = computed(() => props.sourceType !== 'video');
 const displayBookName = computed(() => props.bookName?.trim() || props.chapterName);
 const displaySourceName = computed(() => props.sourceName?.trim() || '未知书源');
 const canSourceSwitch = computed(() => !!props.canWholeBookSwitch || !!props.canTemporarySwitch);
+const currentChapterUrl = computed(() => props.chapterUrl?.trim() ?? '');
 
 function openMenu() {
   menuOpen.value = true;
@@ -79,6 +82,13 @@ function openMenu() {
 function closeMenu() {
   menuOpen.value = false;
   showCachePanel.value = false;
+}
+
+async function handleOpenOriginalPage() {
+  if (!currentChapterUrl.value) {
+    return;
+  }
+  await openUrl(currentChapterUrl.value);
 }
 
 function handleRefresh() {
@@ -182,13 +192,23 @@ useOverlay(() => menuOpen.value, closeMenu);
       <div class="reader-top-bar__chapter">
         <span class="reader-top-bar__chapter-name" :title="chapterName">{{ chapterName }}</span>
         <a
-          v-if="chapterUrl"
+          v-if="currentChapterUrl"
           class="reader-top-bar__url"
           href="#"
-          :title="chapterUrl"
-          @click.prevent="openUrl(chapterUrl)"
-          >{{ chapterUrl }}</a
+          :title="currentChapterUrl"
+          @click.prevent="handleOpenOriginalPage"
+          >{{ currentChapterUrl }}</a
         >
+        <div v-if="currentChapterUrl" class="reader-top-bar__url-actions">
+          <button class="reader-top-bar__url-action" @click.stop="handleOpenOriginalPage">
+            <ExternalLink :size="13" />
+            <span>查看原网页</span>
+          </button>
+          <span class="reader-top-bar__url-mode">
+            <ShieldCheck :size="13" />
+            <span>去广告模式</span>
+          </span>
+        </div>
       </div>
       <span class="reader-top-bar__source" :title="displaySourceName">
         {{ displaySourceName }}
@@ -209,6 +229,18 @@ useOverlay(() => menuOpen.value, closeMenu);
             <RefreshCw :size="16" />
             <span>刷新本章</span>
           </button>
+          <button
+            v-if="currentChapterUrl"
+            class="reader-top-bar__menu-item"
+            @click="handleOpenOriginalPage"
+          >
+            <ExternalLink :size="16" />
+            <span>查看原网页</span>
+          </button>
+          <div v-if="currentChapterUrl" class="reader-top-bar__menu-status">
+            <ShieldCheck :size="16" />
+            <span>当前为去广告模式</span>
+          </div>
           <button
             v-if="canWholeBookSwitch"
             class="reader-top-bar__menu-item"
@@ -439,6 +471,49 @@ useOverlay(() => menuOpen.value, closeMenu);
   text-decoration: underline;
 }
 
+.reader-top-bar__url-actions {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 6px;
+  margin-top: 3px;
+}
+
+.reader-top-bar__url-action,
+.reader-top-bar__url-mode {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  min-height: 24px;
+  padding: 3px 8px;
+  border: 1px solid rgba(255, 255, 255, 0.12);
+  border-radius: 5px;
+  background: rgba(255, 255, 255, 0.08);
+  color: var(--reader-top-bar-color, #e0e0e0);
+  font-size: 0.6875rem;
+  line-height: 1;
+  cursor: pointer;
+  transition:
+    background 0.15s,
+    opacity 0.15s;
+}
+
+.reader-top-bar__url-action:hover:not(:disabled) {
+  background: rgba(255, 255, 255, 0.14);
+}
+
+.reader-top-bar__url-action:disabled {
+  cursor: wait;
+  opacity: 0.55;
+}
+
+.reader-top-bar__url-mode {
+  cursor: default;
+  border-color: rgba(99, 226, 183, 0.28);
+  background: rgba(99, 226, 183, 0.12);
+  color: var(--reader-top-bar-accent, #63e2b7);
+}
+
 /* 遮罩 */
 .reader-top-bar__overlay {
   position: fixed;
@@ -479,6 +554,19 @@ useOverlay(() => menuOpen.value, closeMenu);
 
 .reader-top-bar__menu-item:hover {
   background: rgba(255, 255, 255, 0.08);
+}
+
+.reader-top-bar__menu-status {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  width: 100%;
+  padding: 8px 16px;
+  color: var(--reader-top-bar-accent, #63e2b7);
+  font-size: 0.8125rem;
+  background: rgba(99, 226, 183, 0.08);
+  border-top: 1px solid rgba(255, 255, 255, 0.06);
+  border-bottom: 1px solid rgba(255, 255, 255, 0.06);
 }
 
 .reader-top-bar__menu-info {

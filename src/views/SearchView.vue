@@ -1,8 +1,9 @@
+<!-- SearchView — 聚合/分组搜索书源内容，并承载搜索结果详情与内联阅读入口。 -->
 <script setup lang="ts">
-import { Image, ImageOff, LayoutGrid, List, Search } from 'lucide-vue-next';
-import { useMessage } from 'naive-ui';
+import { Image, ImageOff, LayoutGrid, List, Lock, Search, Unlock } from 'lucide-vue-next';
+import { useMessage, type SelectOption } from 'naive-ui';
 import { storeToRefs } from 'pinia';
-import { ref, reactive, computed, onMounted, onUnmounted, watch } from 'vue';
+import { ref, reactive, computed, h, onMounted, onUnmounted, watch } from 'vue';
 import type { CardSizeKey } from '@/composables/useViewCardDensity';
 import type { TaggedBookItem, BookSourceMeta, BookItem } from '@/types';
 import { useBookDetailDrawerState } from '@/composables/useBookDetailDrawerState';
@@ -35,6 +36,7 @@ const scriptBridgeStore = useScriptBridgeStore();
 const { sources: sourcesRef } = storeToRefs(bookSourceStore);
 const { runSearch, runChapterList, cancelTask } = scriptBridgeStore;
 const prefsStore = usePreferencesStore();
+const fullModeEnabled = computed(() => prefsStore.devTools.fullModeEnabled);
 const {
   cardSizes: CARD_SIZES,
   activeSize,
@@ -56,7 +58,7 @@ const sourceTypeLabels: Record<SearchSourceType, string> = {
   novel: '小说',
   comic: '漫画',
   video: '视频',
-  music: '音乐',
+  music: '音频',
 };
 const sourceTypeOptions = computed(() => {
   const counts = allSearchableSources.value.reduce(
@@ -80,6 +82,29 @@ function normalizeSourceType(sourceType?: string | null): Exclude<SearchSourceTy
     return sourceType;
   }
   return 'novel';
+}
+
+function renderSourceTypeLabel(option: SelectOption) {
+  const type = option.value as SearchSourceType;
+  const label = String(option.label ?? '');
+  if (type !== 'video' && type !== 'music') {
+    return label;
+  }
+  const Icon = fullModeEnabled.value ? Unlock : Lock;
+  return h(
+    'span',
+    {
+      style:
+        'display:inline-flex;align-items:center;gap:6px;min-width:0;',
+      title: fullModeEnabled.value
+        ? `${sourceTypeLabels[type]}已解锁`
+        : `${sourceTypeLabels[type]}需要解锁完全体模式`,
+    },
+    [
+      h('span', { style: 'overflow:hidden;text-overflow:ellipsis;white-space:nowrap;' }, label),
+      h(Icon, { size: 13, strokeWidth: 2.3, style: 'flex:0 0 auto;' }),
+    ],
+  );
 }
 
 const searchableSources = computed(() => {
@@ -631,6 +656,7 @@ onUnmounted(() => {
         size="small"
         class="sv-toolbar__type"
         :options="sourceTypeOptions"
+        :render-label="renderSourceTypeLabel"
       />
       <n-select
         v-model:value="selectedSourceValue"

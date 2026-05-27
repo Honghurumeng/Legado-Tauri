@@ -1,3 +1,4 @@
+<!-- BookSourceInstallDialog — 远程书源安装确认弹窗，处理预览、覆盖检测与误分流链接转发。 -->
 <script setup lang="ts">
 import { X } from "lucide-vue-next";
 import { useMessage } from "naive-ui";
@@ -13,7 +14,9 @@ import {
   type RepoSourceSyncResult,
   type RemoteBookSourcePreview,
 } from "@/composables/useBookSource";
+import { classifyLegadoInstallTarget } from "@/composables/useLegadoDeepLink";
 import { useOverlay } from "@/composables/useOverlay";
+import { useNavigationStore } from "@/stores";
 
 const props = defineProps<{
   show: boolean;
@@ -35,6 +38,7 @@ const emit = defineEmits<{
 
 const message = useMessage();
 const dialog = useDialog();
+const navigationStore = useNavigationStore();
 
 type RemoteSyncStatus = "idle" | "checking" | "same" | "different" | "error";
 
@@ -375,7 +379,11 @@ async function startLoad() {
     if (runId !== loadRunId) {
       return;
     }
-    error.value = e instanceof Error ? e.message : String(e);
+    const previewError = e instanceof Error ? e.message : String(e);
+    if (redirectMisroutedInstall(runId)) {
+      return;
+    }
+    error.value = previewError;
   } finally {
     if (runId === loadRunId) {
       loading.value = false;
@@ -393,6 +401,28 @@ const { triggerClose: closeDialog } = useOverlay(
   () => props.show,
   doCloseDialog,
 );
+
+function redirectMisroutedInstall(runId: number) {
+  const target = classifyLegadoInstallTarget(
+    props.rawLink?.trim() || props.downloadUrl,
+  );
+  if (
+    runId !== loadRunId ||
+    target.type === "booksource" ||
+    target.type === "unknown"
+  ) {
+    return false;
+  }
+  if (target.type === "repo") {
+    message.info("检测到仓库链接，已转到在线仓库");
+    navigationStore.navigateToOnlineRepo(target.url, target.name);
+  } else {
+    message.info("检测到插件链接，已转到扩展安装");
+    navigationStore.navigateToPluginInstall(target.url);
+  }
+  closeDialog();
+  return true;
+}
 
 function updateDialogShow(value: boolean) {
   if (value) {

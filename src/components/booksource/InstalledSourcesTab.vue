@@ -8,9 +8,9 @@ import { useBackAwareDialog as useDialog } from "@/composables/useBackAwareDialo
 import { isTauri } from "@/composables/useEnv";
 import { eventEmit } from "@/composables/useEventBus";
 import { invokeWithTimeout } from "@/composables/useInvoke";
-import { parseLegadoDeepLink } from "@/composables/useLegadoDeepLink";
+import { classifyLegadoInstallTarget } from "@/composables/useLegadoDeepLink";
 import { useOverlay } from "@/composables/useOverlay";
-import { useBookSourceStore } from "@/stores";
+import { useBookSourceStore, useNavigationStore } from "@/stores";
 import { saveExportFile } from "@/utils/exportFile";
 import defaultLogoUrl from "../../assets/booksource-default.svg";
 import {
@@ -57,6 +57,7 @@ const emits = defineEmits<{
 
 const message = useMessage();
 const bookSourceStore = useBookSourceStore();
+const navigationStore = useNavigationStore();
 const dialog = useDialog();
 
 const { exploreDisabled, searchDisabled } = storeToRefs(bookSourceStore);
@@ -384,23 +385,24 @@ function confirmUrlInput() {
     return;
   }
   let downloadUrl = "";
-  try {
-    const payload = parseLegadoDeepLink(url);
-    if (payload.type === "repo") {
-      message.warning("这是仓库链接，请在「在线仓库」页使用添加仓库");
-      return;
-    }
-    if (payload.type !== "booksource") {
-      message.warning("该链接不是书源链接");
-      return;
-    }
-    downloadUrl = payload.url;
-  } catch (e: unknown) {
-    message.warning(
-      `书源地址格式不正确: ${e instanceof Error ? e.message : String(e)}`,
-    );
+  const payload = classifyLegadoInstallTarget(url);
+  if (payload.type === "repo") {
+    closeUrlInputModal();
+    message.info("检测到仓库链接，已转到在线仓库");
+    navigationStore.navigateToOnlineRepo(payload.url, payload.name);
     return;
   }
+  if (payload.type === "plugin") {
+    closeUrlInputModal();
+    message.info("检测到插件链接，已转到扩展安装");
+    navigationStore.navigateToPluginInstall(payload.url);
+    return;
+  }
+  if (payload.type !== "booksource") {
+    message.warning("书源地址格式不正确");
+    return;
+  }
+  downloadUrl = payload.url;
   closeUrlInputModal();
   installDialogUrl.value = downloadUrl;
   showInstallDialog.value = true;

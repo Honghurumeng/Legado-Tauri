@@ -68,6 +68,8 @@ export interface DevToolsPreferences {
   vConsoleEnabled: boolean;
   /** 是否开启完全体模式（解除漫画/音乐限制） */
   fullModeEnabled: boolean;
+  /** 是否解锁书源功能（显示左侧/底部书源导航入口） */
+  bookSourceUnlocked: boolean;
 }
 
 // ── 应用更新检测偏好 ───────────────────────────────────────────────────
@@ -145,10 +147,11 @@ export const usePreferencesStore = defineStore("preferences", () => {
 
   const devToolsConfig = useDynamicConfig<DevToolsPreferences>({
     namespace: "preferences.devTools",
-    version: 2,
+    version: 3,
     defaults: () => ({
       vConsoleEnabled: false,
       fullModeEnabled: false,
+      bookSourceUnlocked: false,
     }),
     migrate: ({ storedVersion, storedData }) => {
       if (storedVersion === 1) {
@@ -156,6 +159,15 @@ export const usePreferencesStore = defineStore("preferences", () => {
         return {
           vConsoleEnabled: old.vConsoleEnabled ?? false,
           fullModeEnabled: false,
+          bookSourceUnlocked: false,
+        };
+      }
+      if (storedVersion === 2) {
+        const old = (storedData ?? {}) as Partial<DevToolsPreferences>;
+        return {
+          vConsoleEnabled: old.vConsoleEnabled ?? false,
+          fullModeEnabled: old.fullModeEnabled ?? false,
+          bookSourceUnlocked: false,
         };
       }
       return null;
