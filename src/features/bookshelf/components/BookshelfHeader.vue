@@ -2,7 +2,7 @@
   BookshelfHeader — 书架页顶部标题、操作入口与分组标签栏。
 -->
 <script setup lang="ts">
-import type { DropdownOption } from 'naive-ui';
+import type { DropdownOption } from "naive-ui";
 import {
   LayoutGrid,
   EyeOff,
@@ -15,13 +15,14 @@ import {
   Pencil,
   Settings2,
   Unlock,
-} from 'lucide-vue-next';
-import { computed } from 'vue';
-import type { CardSizeKey } from '@/composables/useViewCardDensity';
-import type { ShelfGroup } from '@/types/shelfGroup';
-import MobileToolbarMenu from '@/components/layout/MobileToolbarMenu.vue';
-import { isMobile } from '@/composables/useEnv';
-import { usePreferencesStore } from '@/stores/preferences';
+} from "lucide-vue-next";
+import { computed } from "vue";
+import type { CardSizeKey } from "@/composables/useViewCardDensity";
+import type { ShelfGroup } from "@/types/shelfGroup";
+import MobileToolbarMenu from "@/components/layout/MobileToolbarMenu.vue";
+import { isMobile } from "@/composables/useEnv";
+import { usePreferencesStore } from "@/stores/preferences";
+import { UNLOCK_SCOPE_LABELS } from "@/stores/preferences";
 
 const props = defineProps<{
   bookCount: number;
@@ -37,16 +38,16 @@ const props = defineProps<{
 }>();
 
 const emit = defineEmits<{
-  (e: 'set-size', key: CardSizeKey): void;
-  (e: 'set-mobile-cols', cols: number): void;
-  (e: 'toggle-privacy'): void;
-  (e: 'toggle-group-menu'): void;
-  (e: 'select-group', groupId: string): void;
-  (e: 'import-txt'): void;
-  (e: 'refresh'): void;
-  (e: 'toggle-search'): void;
-  (e: 'configure-recommendation'): void;
-  (e: 'toggle-edit'): void;
+  (e: "set-size", key: CardSizeKey): void;
+  (e: "set-mobile-cols", cols: number): void;
+  (e: "toggle-privacy"): void;
+  (e: "toggle-group-menu"): void;
+  (e: "select-group", groupId: string): void;
+  (e: "import-txt"): void;
+  (e: "refresh"): void;
+  (e: "toggle-search"): void;
+  (e: "configure-recommendation"): void;
+  (e: "toggle-edit"): void;
 }>();
 
 const MOBILE_COLS_OPTIONS = [2, 3, 4, 5, 6];
@@ -64,21 +65,21 @@ const showGroupBar = computed(() => {
 
 const mobileMenuOptions = computed<DropdownOption[]>(() => [
   {
-    label: '搜索书架',
-    key: 'search',
+    label: "搜索书架",
+    key: "search",
   },
   {
-    label: '首页推荐',
-    key: 'recommendation',
+    label: "首页推荐",
+    key: "recommendation",
   },
   {
-    label: '刷新书架',
-    key: 'refresh',
+    label: "刷新书架",
+    key: "refresh",
     disabled: props.loading,
   },
   {
-    label: '导入本地 TXT',
-    key: 'import-txt',
+    label: "导入本地 TXT",
+    key: "import-txt",
   },
   ...MOBILE_COLS_OPTIONS.map((n) => ({
     label: `每行 ${n} 本`,
@@ -86,42 +87,42 @@ const mobileMenuOptions = computed<DropdownOption[]>(() => [
     disabled: props.mobileCols === n,
   })),
   {
-    label: props.privacyModeEnabled ? '退出隐私模式' : '进入隐私模式',
-    key: 'privacy',
+    label: props.privacyModeEnabled ? "退出隐私模式" : "进入隐私模式",
+    key: "privacy",
   },
   {
-    label: '编辑书架',
-    key: 'edit',
+    label: "编辑书架",
+    key: "edit",
   },
 ]);
 
 function handleMobileMenuSelect(key: string) {
-  if (key.startsWith('size-')) {
-    emit('set-size', key.slice(5) as CardSizeKey);
+  if (key.startsWith("size-")) {
+    emit("set-size", key.slice(5) as CardSizeKey);
     return;
   }
-  if (key.startsWith('cols-')) {
-    emit('set-mobile-cols', Number(key.slice(5)));
+  if (key.startsWith("cols-")) {
+    emit("set-mobile-cols", Number(key.slice(5)));
     return;
   }
   switch (key) {
-    case 'search':
-      emit('toggle-search');
+    case "search":
+      emit("toggle-search");
       break;
-    case 'recommendation':
-      emit('configure-recommendation');
+    case "recommendation":
+      emit("configure-recommendation");
       break;
-    case 'refresh':
-      emit('refresh');
+    case "refresh":
+      emit("refresh");
       break;
-    case 'import-txt':
-      emit('import-txt');
+    case "import-txt":
+      emit("import-txt");
       break;
-    case 'privacy':
-      emit('toggle-privacy');
+    case "privacy":
+      emit("toggle-privacy");
       break;
-    case 'edit':
-      emit('toggle-edit');
+    case "edit":
+      emit("toggle-edit");
       break;
   }
 }
@@ -135,19 +136,31 @@ function handleMobileMenuSelect(key: string) {
           <h1 class="bs-header__title">书架</h1>
           <span
             v-if="prefStore.devTools.fullModeEnabled"
-            class="bs-header__full-mode"
+            class="bs-header__unlock-badge"
             title="完全体模式已激活"
           >
             <Unlock :size="13" :stroke-width="2.4" />
             <span>完全体模式</span>
           </span>
+          <span
+            v-for="scope in prefStore.devTools.unlockedScopes"
+            :key="scope"
+            class="bs-header__unlock-badge"
+            :title="`${UNLOCK_SCOPE_LABELS[scope] ?? scope} 已解锁`"
+          >
+            <Unlock :size="13" :stroke-width="2.4" />
+            <span>{{ UNLOCK_SCOPE_LABELS[scope] ?? scope }}</span>
+          </span>
         </div>
         <p class="bs-header__sub">
-          {{ privacyModeEnabled ? '隐私模式' : `${bookCount} 本书籍` }}
+          {{ privacyModeEnabled ? "隐私模式" : `${bookCount} 本书籍` }}
         </p>
       </div>
       <div class="bs-header__actions">
-        <MobileToolbarMenu :options="mobileMenuOptions" @select="handleMobileMenuSelect">
+        <MobileToolbarMenu
+          :options="mobileMenuOptions"
+          @select="handleMobileMenuSelect"
+        >
           <!-- 搜索按钮 -->
           <button
             class="bs-icon-btn"
@@ -204,7 +217,9 @@ function handleMobileMenuSelect(key: string) {
           <template v-if="!isMobile">
             <n-dropdown
               trigger="click"
-              :options="cardSizes.map((size) => ({ label: size.label, key: size.key }))"
+              :options="
+                cardSizes.map((size) => ({ label: size.label, key: size.key }))
+              "
               :value="activeSizeKey"
               @select="(key: string) => emit('set-size', key as CardSizeKey)"
             >
@@ -296,7 +311,7 @@ function handleMobileMenuSelect(key: string) {
   color: var(--color-text);
   margin: 0 0 2px;
 }
-.bs-header__full-mode {
+.bs-header__unlock-badge {
   display: inline-flex;
   align-items: center;
   gap: 4px;

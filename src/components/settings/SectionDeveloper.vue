@@ -253,7 +253,8 @@ async function handleRemoteDebugToggle(enabled: boolean) {
       <n-button
         size="small"
         :type="
-          devTools.bookSourceUnlocked || devTools.fullModeEnabled
+          devTools.unlockedScopes.includes('booksource') ||
+          devTools.fullModeEnabled
             ? 'success'
             : 'default'
         "
@@ -261,7 +262,8 @@ async function handleRemoteDebugToggle(enabled: boolean) {
         @click="showBookSourceUnlockDialog = true"
       >
         {{
-          devTools.bookSourceUnlocked || devTools.fullModeEnabled
+          devTools.unlockedScopes.includes("booksource") ||
+          devTools.fullModeEnabled
             ? "已解锁"
             : "解锁书源"
         }}

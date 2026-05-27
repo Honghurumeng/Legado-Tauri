@@ -68,9 +68,17 @@ export interface DevToolsPreferences {
   vConsoleEnabled: boolean;
   /** 是否开启完全体模式（解除漫画/音乐限制） */
   fullModeEnabled: boolean;
-  /** 是否解锁书源功能（显示左侧/底部书源导航入口） */
-  bookSourceUnlocked: boolean;
+  /**
+   * 已解锁的功能范围列表。
+   * 范围字符串与 UNLOCK_SCOPE_LABELS 键对应，例如 ["booksource"].
+   */
+  unlockedScopes: string[];
 }
+
+/** 解锁范围 ID 对应的显示标签。新增范围时在此添加条目即可。 */
+export const UNLOCK_SCOPE_LABELS: Record<string, string> = {
+  booksource: "书源",
+};
 
 // ── 应用更新检测偏好 ───────────────────────────────────────────────────
 
@@ -151,7 +159,7 @@ export const usePreferencesStore = defineStore("preferences", () => {
     defaults: () => ({
       vConsoleEnabled: false,
       fullModeEnabled: false,
-      bookSourceUnlocked: false,
+      unlockedScopes: [],
     }),
     migrate: ({ storedVersion, storedData }) => {
       if (storedVersion === 1) {
@@ -159,7 +167,7 @@ export const usePreferencesStore = defineStore("preferences", () => {
         return {
           vConsoleEnabled: old.vConsoleEnabled ?? false,
           fullModeEnabled: false,
-          bookSourceUnlocked: false,
+          unlockedScopes: [],
         };
       }
       if (storedVersion === 2) {
@@ -167,7 +175,7 @@ export const usePreferencesStore = defineStore("preferences", () => {
         return {
           vConsoleEnabled: old.vConsoleEnabled ?? false,
           fullModeEnabled: old.fullModeEnabled ?? false,
-          bookSourceUnlocked: false,
+          unlockedScopes: [],
         };
       }
       return null;

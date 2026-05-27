@@ -123,7 +123,8 @@ const prefStore = usePreferencesStore();
 const navItems = computed(() => {
   const base = isMobile.value ? mobileNavItems : desktopNavItems;
   const bookSourceVisible =
-    prefStore.devTools.fullModeEnabled || prefStore.devTools.bookSourceUnlocked;
+    prefStore.devTools.fullModeEnabled ||
+    prefStore.devTools.unlockedScopes.includes("booksource");
   return bookSourceVisible ? base : base.filter((n) => n.id !== "booksource");
 });
 const activeNavLabel = computed(

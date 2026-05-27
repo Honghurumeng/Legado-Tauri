@@ -22,15 +22,11 @@ const message = useMessage();
 const prefStore = usePreferencesStore();
 
 /** 当前范围是否已解锁（含完全体模式托底） */
-const isUnlocked = computed(() => {
-  if (props.scope === "booksource") {
-    return (
-      prefStore.devTools.bookSourceUnlocked ||
-      prefStore.devTools.fullModeEnabled
-    );
-  }
-  return false;
-});
+const isUnlocked = computed(
+  () =>
+    prefStore.devTools.unlockedScopes.includes(props.scope) ||
+    prefStore.devTools.fullModeEnabled,
+);
 
 const dialogTitle = computed(() => props.title ?? "解锁");
 
@@ -97,15 +93,18 @@ async function handleVerify() {
 }
 
 function applyUnlock() {
-  if (props.scope === "booksource") {
-    prefStore.patchDevTools({ bookSourceUnlocked: true });
+  const cur = prefStore.devTools.unlockedScopes;
+  if (!cur.includes(props.scope)) {
+    prefStore.patchDevTools({ unlockedScopes: [...cur, props.scope] });
   }
 }
 
 function applyRevoke() {
-  if (props.scope === "booksource") {
-    prefStore.patchDevTools({ bookSourceUnlocked: false });
-  }
+  prefStore.patchDevTools({
+    unlockedScopes: prefStore.devTools.unlockedScopes.filter(
+      (s) => s !== props.scope,
+    ),
+  });
 }
 
 function handleRevoke() {

@@ -1,8 +1,9 @@
 <!-- TaskBar — PC 端底部任务栏，展示版本、平台、日志入口和运行模式标识。 -->
 <script setup lang="ts">
-import { Unlock } from 'lucide-vue-next';
-import type { ShellLogLevel } from '@/stores';
-import { usePreferencesStore } from '@/stores/preferences';
+import { Unlock } from "lucide-vue-next";
+import type { ShellLogLevel } from "@/stores";
+import { usePreferencesStore } from "@/stores/preferences";
+import { UNLOCK_SCOPE_LABELS } from "@/stores/preferences";
 
 const prefStore = usePreferencesStore();
 
@@ -19,18 +20,18 @@ withDefaults(
     showLogZone?: boolean;
   }>(),
   {
-    latestLogLevel: 'INFO',
-    latestLogMessage: '',
-    vueVersion: '0.0.0',
-    tauriVersion: '',
-    platformLabel: '-',
+    latestLogLevel: "INFO",
+    latestLogMessage: "",
+    vueVersion: "0.0.0",
+    tauriVersion: "",
+    platformLabel: "-",
     showLogZone: false,
   },
 );
 
 const emit = defineEmits<{
-  'toggle-log-window': [];
-  'open-about': [];
+  "toggle-log-window": [];
+  "open-about": [];
 }>();
 </script>
 
@@ -47,7 +48,9 @@ const emit = defineEmits<{
       <span class="task-bar__version">前端 v{{ vueVersion }}</span>
       <!-- Tauri 壳版本：仅 Tauri 环境显示；鸿蒙版本暂未对接，预留注释 -->
       <!-- TODO: 鸿蒙环境在此处显示鸿蒙版本号，待后续对接 HarmonyOS 版本 API -->
-      <span v-if="tauriVersion" class="task-bar__version task-bar__version--tauri"
+      <span
+        v-if="tauriVersion"
+        class="task-bar__version task-bar__version--tauri"
         >壳 v{{ tauriVersion }}</span
       >
       <span class="task-bar__platform">{{ platformLabel }}</span>
@@ -66,18 +69,38 @@ const emit = defineEmits<{
         :class="`task-bar__log-level--${latestLogLevel.toLowerCase()}`"
         >{{ latestLogLevel }}</span
       >
-      <span class="task-bar__log-msg">{{ latestLogMessage || '暂无日志' }}</span>
+      <span class="task-bar__log-msg">{{
+        latestLogMessage || "暂无日志"
+      }}</span>
     </button>
 
-    <span
-      v-if="prefStore.devTools.fullModeEnabled"
-      class="task-bar__full-mode"
-      title="完全体模式已激活"
-      aria-label="完全体模式已激活"
+    <div
+      v-if="
+        prefStore.devTools.fullModeEnabled ||
+        prefStore.devTools.unlockedScopes.length > 0
+      "
+      class="task-bar__unlock-zone"
     >
-      <Unlock :size="12" :stroke-width="2.4" />
-      <span>完全体</span>
-    </span>
+      <span
+        v-if="prefStore.devTools.fullModeEnabled"
+        class="task-bar__unlock-badge"
+        title="完全体模式已激活"
+        aria-label="完全体模式已激活"
+      >
+        <Unlock :size="12" :stroke-width="2.4" />
+        <span>完全体</span>
+      </span>
+      <span
+        v-for="scope in prefStore.devTools.unlockedScopes"
+        :key="scope"
+        class="task-bar__unlock-badge"
+        :title="`${UNLOCK_SCOPE_LABELS[scope] ?? scope} 已解锁`"
+        :aria-label="`${UNLOCK_SCOPE_LABELS[scope] ?? scope} 已解锁`"
+      >
+        <Unlock :size="12" :stroke-width="2.4" />
+        <span>{{ UNLOCK_SCOPE_LABELS[scope] ?? scope }}</span>
+      </span>
+    </div>
   </footer>
 </template>
 
@@ -179,8 +202,14 @@ const emit = defineEmits<{
   white-space: nowrap;
   min-width: 0;
 }
-.task-bar__full-mode {
+.task-bar__unlock-zone {
   margin-left: auto;
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  flex-shrink: 0;
+}
+.task-bar__unlock-badge {
   display: inline-flex;
   align-items: center;
   gap: 4px;
