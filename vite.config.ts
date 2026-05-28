@@ -1,3 +1,4 @@
+// Vite build and dev-server configuration for the Legado Tauri frontend.
 import tailwindcss from '@tailwindcss/vite';
 import vue from '@vitejs/plugin-vue';
 import { fileURLToPath, URL } from 'node:url';
@@ -49,6 +50,7 @@ export default defineConfig(() => ({
     ],
   },
   build: {
+    sourcemap: false,
     assetsInlineLimit: isHarmonyBuild ? Number.MAX_SAFE_INTEGER : undefined,
     cssCodeSplit: !isHarmonyBuild,
     modulePreload: isHarmonyBuild ? false : undefined,
