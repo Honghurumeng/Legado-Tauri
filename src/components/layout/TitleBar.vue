@@ -5,13 +5,15 @@ import { isTauri, isMobile, platform } from '@/composables/useEnv';
 
 /** Windows 桌面端即使切换手机布局，也保留完整标题栏（拖拽 + 窗口控制） */
 const forceDesktopBar = computed(() => isTauri && platform.value === 'Windows');
+const isMacOS = computed(() => platform.value === 'macOS');
+const showDesktopControls = computed(() => isTauri && !isMacOS.value);
 
 withDefaults(
   defineProps<{
     title?: string;
   }>(),
   {
-    title: 'Legado',
+    title: '开源阅读',
   },
 );
 
@@ -71,7 +73,7 @@ onUnmounted(() => {
     <span v-if="isMobile" class="title-bar__title">{{ title }}</span>
     <div class="title-bar__spacer" data-tauri-drag-region />
     <!-- 仅 Tauri 桌面环境显示窗口控制按钮 -->
-    <div v-if="isTauri" class="title-bar__controls">
+    <div v-if="showDesktopControls" class="title-bar__controls">
       <button
         class="ctrl-btn ctrl-btn--minimize"
         aria-label="最小化"

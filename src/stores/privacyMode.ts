@@ -62,9 +62,6 @@ export const usePrivacyModeStore = defineStore('privacyMode', () => {
             exitPrivacyMode('background');
           }
         });
-        await appWindow.onCloseRequested(() => {
-          exitPrivacyMode('close');
-        });
       } catch {
         // 非 Tauri 环境忽略
       }

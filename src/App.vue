@@ -1,20 +1,8 @@
 <!-- App.vue：应用根组件，负责全局 Provider、主视图保活、桌面/移动主布局与顶层返回事件派发。 -->
 <script setup lang="ts">
-import {
-  darkTheme,
-  type GlobalTheme,
-  type GlobalThemeOverrides,
-} from "naive-ui";
+import { darkTheme, type GlobalTheme, type GlobalThemeOverrides } from "naive-ui";
 import { storeToRefs } from "pinia";
-import {
-  ref,
-  computed,
-  defineAsyncComponent,
-  watch,
-  reactive,
-  onMounted,
-  onUnmounted,
-} from "vue";
+import { ref, computed, defineAsyncComponent, watch, reactive, onMounted, onUnmounted } from "vue";
 import type { NavItem } from "@/types";
 import packageJson from "../package.json";
 import tauriConfig from "../src-tauri/tauri.conf.json";
@@ -50,7 +38,6 @@ import {
   useAppConfigStore,
   useBackStackStore,
   useNavigationStore,
-  usePreferencesStore,
   usePrivacyModeStore,
   useReaderSettingsStore,
   useReaderUiStore,
@@ -58,37 +45,23 @@ import {
   useBookSourceStore,
 } from "./stores";
 // ScriptDialog 按需懒加载：仅在 Boa 引擎触发弹窗时才加载，不阻塞首屏
-const ScriptDialog = defineAsyncComponent(
-  () => import("./components/ScriptDialog.vue"),
-);
+const ScriptDialog = defineAsyncComponent(() => import("./components/ScriptDialog.vue"));
 const FrontendPluginDialog = defineAsyncComponent(
   () => import("./components/FrontendPluginDialog.vue"),
 );
 // WsConnectDialog：非 Tauri 环境下后端连接失败时弹出地址输入框
-const WsConnectDialog = defineAsyncComponent(
-  () => import("./components/WsConnectDialog.vue"),
-);
+const WsConnectDialog = defineAsyncComponent(() => import("./components/WsConnectDialog.vue"));
 import BookSourceLimitWarningDialog from "./components/BookSourceLimitWarningDialog.vue";
 import PrefetchProgressBar from "./components/PrefetchProgressBar.vue";
 
 // ── 主窗口视图 ───────────────────────────────────────────────────────────
 
-const BookshelfView = defineAsyncComponent(
-  () => import("./views/BookshelfView.vue"),
-);
-const ExploreView = defineAsyncComponent(
-  () => import("./views/ExploreView.vue"),
-);
+const BookshelfView = defineAsyncComponent(() => import("./views/BookshelfView.vue"));
+const ExploreView = defineAsyncComponent(() => import("./views/ExploreView.vue"));
 const SearchView = defineAsyncComponent(() => import("./views/SearchView.vue"));
-const BookSourceView = defineAsyncComponent(
-  () => import("./views/BookSourceView.vue"),
-);
-const ExtensionsView = defineAsyncComponent(
-  () => import("./views/ExtensionsView.vue"),
-);
-const SettingsView = defineAsyncComponent(
-  () => import("./views/SettingsView.vue"),
-);
+const BookSourceView = defineAsyncComponent(() => import("./views/BookSourceView.vue"));
+const ExtensionsView = defineAsyncComponent(() => import("./views/ExtensionsView.vue"));
+const SettingsView = defineAsyncComponent(() => import("./views/SettingsView.vue"));
 
 const viewMap: Record<string, ReturnType<typeof defineAsyncComponent>> = {
   bookshelf: BookshelfView,
@@ -114,23 +87,14 @@ const mobileNavItems: NavItem[] = [
   { id: "bookshelf", icon: "bookshelf", label: "书架" },
   { id: "explore", icon: "explore", label: "发现" },
   { id: "search", icon: "search", label: "搜索" },
-  { id: "booksource", icon: "booksource", label: "书源" },
+  { id: "booksource", icon: "booksource", label: "书源管理" },
   { id: "extensions", icon: "extensions", label: "扩展" },
   { id: "settings", icon: "settings", label: "设置" },
 ];
 
-const prefStore = usePreferencesStore();
-const navItems = computed(() => {
-  const base = isMobile.value ? mobileNavItems : desktopNavItems;
-  const bookSourceVisible =
-    prefStore.devTools.fullModeEnabled ||
-    prefStore.devTools.unlockedScopes.includes("booksource");
-  return bookSourceVisible ? base : base.filter((n) => n.id !== "booksource");
-});
+const navItems = computed(() => (isMobile.value ? mobileNavItems : desktopNavItems));
 const activeNavLabel = computed(
-  () =>
-    navItems.value.find((n) => n.id === navigationStore.activeView)?.label ??
-    "",
+  () => navItems.value.find((n) => n.id === navigationStore.activeView)?.label ?? "",
 );
 
 // ── 视图缓存（惰性加载 + 保持挂载）────────────────────────────────────────
@@ -254,10 +218,7 @@ const readerNativeBrightnessEnabled = computed(
     readerSettingsStore.settings.brightnessMode === "custom",
 );
 
-function syncAndroidReaderBrightness(
-  enabled: boolean,
-  percent = readerBrightnessPercent.value,
-) {
+function syncAndroidReaderBrightness(enabled: boolean, percent = readerBrightnessPercent.value) {
   if (enabled) {
     window.LegadoAndroidInput?.setReaderBrightnessPercent?.(percent);
     return;
@@ -266,11 +227,7 @@ function syncAndroidReaderBrightness(
 }
 
 watch(
-  () =>
-    [
-      readerNativeBrightnessEnabled.value,
-      readerBrightnessPercent.value,
-    ] as const,
+  () => [readerNativeBrightnessEnabled.value, readerBrightnessPercent.value] as const,
   ([enabled, percent]) => syncAndroidReaderBrightness(enabled, percent),
   { immediate: true },
 );
@@ -296,9 +253,7 @@ const readerAwakeMode = computed(() =>
   resolveReaderAwakeMode(appConfig.value.power_reader_awake_mode),
 );
 const readerAwakeTimeoutMs = computed(() => {
-  const seconds = Number(
-    appConfig.value.power_reader_awake_timeout_secs ?? 600,
-  );
+  const seconds = Number(appConfig.value.power_reader_awake_timeout_secs ?? 600);
   const safeSeconds = Number.isFinite(seconds)
     ? Math.min(7200, Math.max(60, Math.round(seconds)))
     : 600;
@@ -314,11 +269,7 @@ function clearReaderAwakeTimer() {
 }
 
 function armReaderAwakeTimer() {
-  if (
-    !readerUiStore.readerVisible ||
-    readerAwakeMode.value !== "timeout" ||
-    !appForeground.value
-  ) {
+  if (!readerUiStore.readerVisible || readerAwakeMode.value !== "timeout" || !appForeground.value) {
     clearReaderAwakeTimer();
     return;
   }
@@ -388,9 +339,7 @@ const keepScreenOnEnabled = computed(
   () =>
     isAndroidPlatform.value &&
     appForeground.value &&
-    (ttsKeepAwakeEnabled.value ||
-      readerAlwaysAwakeEnabled.value ||
-      readerTimedAwakeEnabled.value),
+    (ttsKeepAwakeEnabled.value || readerAlwaysAwakeEnabled.value || readerTimedAwakeEnabled.value),
 );
 
 function syncAndroidKeepScreenOn(enabled: boolean) {
@@ -429,8 +378,7 @@ function _onMqChange(e: MediaQueryListEvent) {
 }
 function _onVisibilityChange() {
   setAppForeground(document.visibilityState === "visible");
-  const event =
-    document.visibilityState === "visible" ? "resume" : "background";
+  const event = document.visibilityState === "visible" ? "resume" : "background";
   void sync.notifyLifecycle(event).catch(() => {});
 }
 function _onAndroidAppPaused() {
@@ -593,9 +541,7 @@ const effectiveDark = computed(() => {
 });
 
 /** Naive UI 主题（null = 亮色） */
-const naiveTheme = computed<GlobalTheme | null>(() =>
-  effectiveDark.value ? darkTheme : null,
-);
+const naiveTheme = computed<GlobalTheme | null>(() => (effectiveDark.value ? darkTheme : null));
 
 // vConsole 调试面板（由开发设置开关控制）
 useVConsole(effectiveDark);
@@ -664,16 +610,11 @@ const naiveThemeOverrides = computed<GlobalThemeOverrides>(() => {
 watch(
   effectiveDark,
   (isDark) => {
-    document.documentElement.setAttribute(
-      "data-theme",
-      isDark ? "dark" : "light",
-    );
+    document.documentElement.setAttribute("data-theme", isDark ? "dark" : "light");
   },
   { immediate: true },
 );
-void ensureAppConfig().then(() =>
-  setLayoutMode(appConfig.value.ui_layout_mode),
-);
+void ensureAppConfig().then(() => setLayoutMode(appConfig.value.ui_layout_mode));
 watch(
   () => appConfig.value.ui_layout_mode,
   (mode) => setLayoutMode(mode),
@@ -691,9 +632,7 @@ const vueVersion = computed(() => packageJson.version || "0.0.0");
 // Tauri 壳版本：仅在 Tauri 环境下传给 TaskBar；鸿蒙版本暂不对接
 const tauriVersion = computed(() => (isTauri ? tauriConfig.version || "" : ""));
 const { logZoneEnabled: showLogZone } = useLogZonePref();
-const latestLogMessage = computed(
-  () => shellStatusStore.latestLog?.message ?? "暂无日志",
-);
+const latestLogMessage = computed(() => shellStatusStore.latestLog?.message ?? "暂无日志");
 </script>
 
 <template>
@@ -711,9 +650,10 @@ const latestLogMessage = computed(
             :class="{
               'app-layout--mobile': isMobile,
               'app-layout--mobile-desktop-bar': isMobile && forceDesktopBar,
+              'app-layout--macos': platform === 'macOS',
             }"
           >
-            <TitleBar :title="isMobile ? activeNavLabel : 'Legado'" />
+            <TitleBar :title="isMobile ? activeNavLabel : '开源阅读'" />
             <SideBar
               v-if="!isMobile"
               :items="navItems"
@@ -723,10 +663,7 @@ const latestLogMessage = computed(
             <MainContent>
               <!-- 移动端视图首次加载遮罩：仅覆盖内容区，不遮盖底部导航 -->
               <Transition name="mask-fade">
-                <div
-                  v-if="isMobile && showLoadingMask"
-                  class="view-loading-mask"
-                >
+                <div v-if="isMobile && showLoadingMask" class="view-loading-mask">
                   <n-spin size="large" />
                 </div>
               </Transition>
@@ -867,6 +804,14 @@ const latestLogMessage = computed(
 /* Windows 强制手机布局时：顶栏行用固定高度（用于拖拽/窗口控制），底部导航保留正常高度 */
 .app-layout--mobile-desktop-bar {
   grid-template-rows: var(--topbar-height) 1fr var(--nav-height);
+}
+
+.app-layout--macos {
+  grid-template-rows: 0 1fr var(--bottom-bar-height);
+}
+
+.app-layout--macos :deep(.title-bar) {
+  display: none;
 }
 
 .placeholder {

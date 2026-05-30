@@ -368,7 +368,7 @@ onMounted(async () => {
   <SettingSection title="关于" section-id="section-about">
     <div class="about-hero">
       <div class="about-hero__copy">
-        <div class="about-hero__eyebrow">Legado Tauri</div>
+        <div class="about-hero__eyebrow">开源阅读</div>
         <h3 class="about-hero__title">跨端阅读应用运行概览</h3>
         <p class="about-hero__desc">
           当前页聚合应用版本、运行模式、桥接能力和软件贡献者，便于快速确认当前环境到底跑在
