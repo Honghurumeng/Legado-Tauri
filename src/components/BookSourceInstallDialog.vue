@@ -266,18 +266,28 @@ function resetInstallState() {
   remoteVersion.value = "";
 }
 
+function getBookSourceFileExt(fileName: string): string {
+  const lower = fileName.toLowerCase();
+  if (lower.endsWith(".json")) {
+    return ".json";
+  }
+  if (lower.endsWith(".js")) {
+    return ".js";
+  }
+  return ".js";
+}
+
 function uniqueFileName(baseName: string, usedNames: Set<string>) {
-  const dot = baseName.toLowerCase().endsWith(".js")
-    ? baseName.length - 3
+  const ext = getBookSourceFileExt(baseName);
+  const hasKnownExt =
+    baseName.toLowerCase().endsWith(".js") ||
+    baseName.toLowerCase().endsWith(".json");
+  const dot = hasKnownExt
+    ? baseName.length - ext.length
     : baseName.length;
   const stem = baseName.slice(0, dot) || "booksource";
-  const ext = baseName.toLowerCase().endsWith(".js")
-    ? baseName.slice(dot)
-    : ".js";
   let index = 2;
-  let candidate = baseName.toLowerCase().endsWith(".js")
-    ? baseName
-    : `${baseName}.js`;
+  let candidate = hasKnownExt ? baseName : `${baseName}${ext}`;
   while (usedNames.has(candidate)) {
     candidate = `${stem}-${index}${ext}`;
     index += 1;
@@ -502,13 +512,14 @@ async function performInstall(current: RemoteBookSourcePreview) {
       // 自动改用备用文件名重试一次
       const msg = e instanceof Error ? e.message : String(e);
       if (msg.includes("属于另一个")) {
-        const dot = targetFileName.toLowerCase().endsWith(".js")
-          ? targetFileName.length - 3
+        const ext = getBookSourceFileExt(targetFileName);
+        const hasKnownExt =
+          targetFileName.toLowerCase().endsWith(".js") ||
+          targetFileName.toLowerCase().endsWith(".json");
+        const dot = hasKnownExt
+          ? targetFileName.length - ext.length
           : targetFileName.length;
         const stem = targetFileName.slice(0, dot) || "booksource";
-        const ext = targetFileName.toLowerCase().endsWith(".js")
-          ? targetFileName.slice(dot)
-          : ".js";
         const usedNames = new Set(
           installedSources.value.map((s) => s.fileName),
         );

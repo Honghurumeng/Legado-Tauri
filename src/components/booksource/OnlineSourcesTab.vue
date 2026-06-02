@@ -746,13 +746,14 @@ function resolveInstallFileName(
     return srcFileName;
   }
   // 存在同名但不同 UUID 的本地文件，自动生成不冲突的新文件名
-  const dot = srcFileName.toLowerCase().endsWith(".js")
-    ? srcFileName.length - 3
+  const lower = srcFileName.toLowerCase();
+  const hasKnownExt = lower.endsWith(".js") || lower.endsWith(".json");
+  const extLength = lower.endsWith(".json") ? 5 : 3;
+  const dot = hasKnownExt
+    ? srcFileName.length - extLength
     : srcFileName.length;
   const stem = srcFileName.slice(0, dot) || "booksource";
-  const ext = srcFileName.toLowerCase().endsWith(".js")
-    ? srcFileName.slice(dot)
-    : ".js";
+  const ext = hasKnownExt ? srcFileName.slice(dot) : ".js";
   let index = 2;
   let candidate = `${stem}-${index}${ext}`;
   while (reservedNames.has(candidate)) {

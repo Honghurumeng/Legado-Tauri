@@ -1,0 +1,40 @@
+[package]
+name = "legado-tauri-backend"
+version = "0.8.0"
+description = "Tauri backend for the Legado Tauri reader"
+authors = ["Legado Tauri Contributors"]
+edition = "2021"
+default-run = "legado-tauri-backend"
+
+[lib]
+name = "legado_tauri_backend"
+crate-type = ["staticlib", "cdylib", "rlib"]
+
+[build-dependencies]
+tauri-build = { version = "2.6", features = [] }
+
+[dependencies]
+anyhow = "1"
+base64 = "0.22"
+dirs = "6"
+encoding_rs = "0.8"
+mime_guess = "2"
+percent-encoding = "2"
+regex = "1"
+reqwest = { version = "0.12", default-features = false, features = ["cookies", "gzip", "brotli", "deflate", "json", "rustls-tls"] }
+scraper = "0.22"
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+sha2 = "0.10"
+tauri = { version = "2.11", features = ["protocol-asset"] }
+tauri-plugin-dialog = "2.7"
+tauri-plugin-fs = "2.5"
+tauri-plugin-opener = "2.5"
+thiserror = "2"
+tokio = { version = "1", features = ["fs", "macros", "rt-multi-thread", "sync", "time"] }
+url = "2"
+uuid = { version = "1", features = ["v4", "serde"] }
+
+[features]
+default = ["custom-protocol"]
+custom-protocol = ["tauri/custom-protocol"]

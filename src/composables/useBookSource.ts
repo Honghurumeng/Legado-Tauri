@@ -36,6 +36,14 @@ export interface BookSourceMeta {
   requireUrls: string[];
   /** 文本扫描检测到的顶层 explore 函数标志（无需启动 JS 引擎） */
   hasExplore?: boolean;
+  /**
+   * 后端识别出的解析器类型。
+   *
+   * 维护提醒：书源运行必须先按 parserType 分派解析器，再进入具体规则实现。
+   * 新增/修复书源格式时，请优先检查 src-tauri/src/booksource/parser_registry.rs，
+   * 并按 parserType 单独补测试，避免把 Legado JSON、Tauri JS 等规则混在一起维护。
+   */
+  parserType?: "tauri-js" | "legado-json-css" | string;
 }
 
 export interface ValidationResult {
@@ -236,8 +244,9 @@ export function validateBookSourceFileName(fileName: string): string[] {
     errors.push("文件名不能为空");
     return errors;
   }
-  if (!name.toLowerCase().endsWith(".js")) {
-    errors.push("文件名必须以 .js 结尾");
+  const lower = name.toLowerCase();
+  if (!lower.endsWith(".js") && !lower.endsWith(".json")) {
+    errors.push("文件名必须以 .js 或 .json 结尾");
   }
   if (
     /[\\/:*?"<>|]/.test(name) ||
@@ -257,6 +266,8 @@ export function validateBookSourceContent(
   const errors: string[] = [];
   const warnings: string[] = [];
   const trimmed = content.trim();
+  const fileName = options.fileName ?? "";
+  const isJsonBookSource = fileName.toLowerCase().endsWith(".json");
   const name =
     readBookSourceMetaValues(content, "@name", ["bookSourceName"])[0] ?? "";
   const urls = readBookSourceMetaValues(content, "@url", ["bookSourceUrl"]);
@@ -273,7 +284,7 @@ export function validateBookSourceContent(
   if (/^<(?:!doctype\s+html|html|head|body)\b/.test(head)) {
     errors.push("当前内容看起来是网页 HTML，请填写或导入书源 JS 文件地址");
   }
-  if (/^[{[]/.test(trimmed)) {
+  if (/^[{[]/.test(trimmed) && !isJsonBookSource) {
     errors.push("当前内容看起来是 JSON，不是可直接运行的书源 JS 文件");
   }
 
@@ -298,16 +309,24 @@ export function validateBookSourceContent(
     );
   }
 
-  if (!entryFunctions.length) {
+  if (!entryFunctions.length && !isJsonBookSource) {
     errors.push(
       "缺少可调用函数，请至少提供 search/bookInfo/toc/content/explore 之一",
     );
   }
 
-  if (trimmed) {
+  if (trimmed && !isJsonBookSource) {
     const syntaxError = validateJavaScriptSyntax(content);
     if (syntaxError) {
       errors.push(`JavaScript 语法错误：${syntaxError}`);
+    }
+  } else if (trimmed && isJsonBookSource) {
+    try {
+      JSON.parse(trimmed);
+    } catch (e: unknown) {
+      errors.push(
+        `JSON 书源格式错误：${e instanceof Error ? e.message : String(e)}`,
+      );
     }
   }
 

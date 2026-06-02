@@ -273,12 +273,15 @@ function confirmBatchDelete() {
 async function exportSingleSource(src: BookSourceMeta) {
   try {
     const content = await readBookSource(src.fileName, src.sourceDir);
+    const isJson = src.fileName.toLowerCase().endsWith(".json");
     const saved = await saveExportFile({
       defaultName: src.fileName,
-      mime: "text/javascript;charset=utf-8",
+      mime: isJson
+        ? "application/json;charset=utf-8"
+        : "text/javascript;charset=utf-8",
       text: content,
-      filterName: "JavaScript",
-      extensions: ["js"],
+      filterName: isJson ? "JSON" : "JavaScript",
+      extensions: [isJson ? "json" : "js"],
     });
     if (saved) {
       message.success(`已导出「${src.name}」`);
@@ -764,40 +767,46 @@ function importFromFile() {
       try {
         const text = await file.text();
         if (file.name.toLowerCase().endsWith(".json")) {
-          // JSON 批量导入：[{ fileName, content }] 格式
-          const arr: Array<{ fileName: string; content: string }> =
-            JSON.parse(text);
-          if (!Array.isArray(arr)) {
-            throw new Error("JSON 格式错误，应为数组");
-          }
-          for (const [index, item] of arr.entries()) {
-            try {
-              if (
-                !item ||
-                typeof item.fileName !== "string" ||
-                typeof item.content !== "string"
-              ) {
-                throw new Error("缺少 fileName/content 字符串字段");
-              }
-              const validation = validateBookSourceContent(item.content, {
-                fileName: item.fileName,
-              });
-              const validationErrors = [
-                ...validateBookSourceFileName(item.fileName),
-                ...validation.errors,
-              ];
-              if (validationErrors.length) {
-                throw new Error(
-                  formatValidationIssues("书源格式不正确", validationErrors),
+          const parsed = JSON.parse(text) as unknown;
+          const looksLikeExportBundle =
+            Array.isArray(parsed) &&
+            parsed.every(
+              (item) =>
+                item &&
+                typeof item === "object" &&
+                typeof (item as { fileName?: unknown }).fileName ===
+                  "string" &&
+                typeof (item as { content?: unknown }).content === "string",
+            );
+          if (looksLikeExportBundle) {
+            for (const [index, item] of (
+              parsed as Array<{ fileName: string; content: string }>
+            ).entries()) {
+              try {
+                const validation = validateBookSourceContent(item.content, {
+                  fileName: item.fileName,
+                });
+                const validationErrors = [
+                  ...validateBookSourceFileName(item.fileName),
+                  ...validation.errors,
+                ];
+                if (validationErrors.length) {
+                  throw new Error(
+                    formatValidationIssues("书源格式不正确", validationErrors),
+                  );
+                }
+                await saveBookSource(item.fileName, item.content);
+                ok++;
+              } catch (e: unknown) {
+                errors.push(
+                  `${file.name} 第 ${index + 1} 项: ${e instanceof Error ? e.message : String(e)}`,
                 );
               }
-              await saveBookSource(item.fileName, item.content);
-              ok++;
-            } catch (e: unknown) {
-              errors.push(
-                `${file.name} 第 ${index + 1} 项: ${e instanceof Error ? e.message : String(e)}`,
-              );
             }
+          } else {
+            const result = await importLegacyJsonText(text);
+            ok += result.imported;
+            errors.push(...result.errors.map((err) => `${file.name}: ${err}`));
           }
         } else {
           const validation = validateBookSourceContent(text, {
@@ -1109,7 +1118,7 @@ defineExpose({
         />
         <n-empty
           v-if="!filtered.length && !loading"
-          description="暂无书源，可导入 .js 文件或从在线仓库安装"
+          description="暂无书源，可导入 .js/.json 文件或从在线仓库安装"
           style="padding: 48px 0"
         />
       </div>
@@ -1192,7 +1201,7 @@ defineExpose({
         "
       >
         <span class="dir-mgr__hint"
-          >外部目录中的 .js 书源将被自动载入，文件变动实时监听。</span
+          >外部目录中的 .js/.json 书源将被自动载入，文件变动实时监听。</span
         >
         <n-button type="primary" size="small" @click="addExternalDir"
           >添加外部目录</n-button
@@ -1214,7 +1223,7 @@ defineExpose({
   >
     <n-input
       v-model:value="urlInputValue"
-      placeholder="输入书源 .js 文件地址（https://...）"
+      placeholder="输入书源 .js/.json 文件地址（https://...）"
       clearable
       autofocus
       @keyup.enter="confirmUrlInput"

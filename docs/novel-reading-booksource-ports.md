@@ -199,12 +199,35 @@ WebSocket 命令协议参考：
 }
 ```
 
-## 7. 当前主项目缺口
+## 7. 当前主项目状态
 
-当前主项目存在前端调用清单，但主仓库后端缺失：
+历史上主项目只有前端调用清单，缺少完整 Tauri 后端：
 
 - `src-tauri/tauri.conf.json` 不存在。
 - `src-tauri/Cargo.toml` 不存在。
 - `src-tauri/src/*.rs` 不存在。
 
-因此，`1420` 的前端开发服务器可以启动界面，但小说阅读和书源管理的核心能力需要 `7688` WebSocket 后端或完整 Tauri 后端支撑。
+当前已补充 Tauri 2 后端工程，桌面端通过 Tauri IPC 调用后端命令，不依赖 `7688` WebSocket 端口。`7688` Web/B-S 模式服务仍是后续独立能力：如果要让普通浏览器直接连接后端，还需要继续实现 HTTP 静态资源服务和 `/ws` WebSocket invoke 协议。
+
+## 8. 后端解析器维护入口
+
+当前已补充 Tauri 2 后端工程，书源运行链路的维护入口是：
+
+- `src-tauri/src/booksource/parser_registry.rs`
+- `src-tauri/src/booksource/legado_json.rs`
+- `src-tauri/src/booksource/rules.rs`
+- 前端元数据类型：`src/composables/useBookSource.ts` 的 `BookSourceMeta.parserType`
+
+后端运行书源时必须先判断 `parserType`，再分派到对应解析器。当前支持的解析类型：
+
+| parserType | 说明 | 主要测试书源 |
+| --- | --- | --- |
+| `legado-json-css` | 开源阅读/Legado JSON 规则书源，当前覆盖 CSS 选择器、`@text/@html/@href/@src`、索引/切片、`##正则替换`、分页目录/正文等常用规则。 | `elang.json` |
+| `tauri-js` | 本项目原生 JS 书源格式。当前可管理/保存/读取，但 JS 运行时尚未完整接入。 | 后续 JS 书源 |
+
+维护要求：
+
+1. 新增或修复书源规则时，优先确认该书源属于哪个 `parserType`。
+2. 不要在 `booksource_search`、`booksource_chapter_content` 等命令函数里临时判断字段解析；命令函数应只加载书源并调用 parser registry。
+3. 每种 `parserType` 都应有独立测试样例。修复 `legado-json-css` 时至少跑通 `elang.json` 的搜索、详情、目录、正文链路。
+4. 如果新增 XPath、JSONPath、JS Engine 等解析类型，先扩展 `ParserType` 和分派表，再新增对应解析器模块和测试。

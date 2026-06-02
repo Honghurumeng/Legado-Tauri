@@ -1,0 +1,41 @@
+{
+  "bookSourceGroup": "精选1",
+  "bookSourceName": "🎉 饿狼小说",
+  "bookSourceType": 0,
+  "bookSourceUrl": "http://m.elkoparts.com",
+  "customOrder": 1,
+  "enabled": true,
+  "enabledCookieJar": true,
+  "enabledExplore": true,
+  "lastUpdateTime": 1757559581508,
+  "respondTime": 36910,
+  "ruleBookInfo": {
+    "author": ".top@p.0@text",
+    "coverUrl": ".imgbox@img@src",
+    "intro": ".xdesc@textNodes##(^|[。！？]+[”」）】]?)##$1<br>",
+    "kind": ".top@p.1:2:4@text##.*：|小说|\\s..:.*",
+    "lastChapter": ".top@a.-1@text##正文卷.|正文.|VIP卷.|默认卷.|卷_|VIP章节.|免费章节.|章节目录.|最新章节.|[\\(（【].*?[求更票谢乐发订合补加架字修Kk].*?[】）\\)]",
+    "name": ".top@h1@text"
+  },
+  "ruleContent": {
+    "content": "id.content@html",
+    "nextContentUrl": "text.下一页@href"
+  },
+  "ruleExplore": {},
+  "ruleSearch": {
+    "author": ".s4@text",
+    "bookList": ".txt-list-row5@li!0",
+    "bookUrl": "a.0@href",
+    "kind": ".s1,.s5@text##\\[|\\]|小说",
+    "lastChapter": "a.1@text##正文卷.|正文.|VIP卷.|默认卷.|卷_|VIP章节.|免费章节.|章节目录.|最新章节.|[\\(（【].*?[求更票谢乐发订合补加架字修Kk].*?[】）\\)]",
+    "name": "a.0@text"
+  },
+  "ruleToc": {
+    "chapterList": ".section-list@li@a",
+    "chapterName": "text##正文卷.|正文.|VIP卷.|默认卷.|卷_|VIP章节.|免费章节.|章节目录.|最新章节.|[\\(（【].*?[求更票谢乐发订合补加架字修Kk].*?[】）\\)]",
+    "chapterUrl": "href",
+    "nextTocUrl": ".right@a@href"
+  },
+  "searchUrl": "/search.php?keyWord={{key}}",
+  "weight": 0
+}
