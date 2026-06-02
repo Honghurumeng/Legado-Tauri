@@ -13,15 +13,7 @@ import {
 } from "lucide-vue-next";
 import { useMessage } from "naive-ui";
 import { storeToRefs } from "pinia";
-import {
-  ref,
-  reactive,
-  computed,
-  nextTick,
-  onMounted,
-  onUnmounted,
-  watch,
-} from "vue";
+import { ref, reactive, computed, nextTick, onMounted, onUnmounted, watch } from "vue";
 import type { BookSourceMeta, BookItem } from "@/types";
 import SourceTypeBadge from "@/components/base/SourceTypeBadge.vue";
 import { useBackAwareDialog as useDialog } from "@/composables/useBackAwareDialog";
@@ -33,10 +25,7 @@ import { dbgLog } from "@/composables/useFrontendStorage";
 import { useInlineBookReader } from "@/composables/useInlineBookReader";
 import { useMobileHorizontalSwipe } from "@/composables/useMobileHorizontalSwipe";
 import { useOverlay } from "@/composables/useOverlay";
-import {
-  useViewCardDensity,
-  normalizeCardSizeKey,
-} from "@/composables/useViewCardDensity";
+import { useViewCardDensity, normalizeCardSizeKey } from "@/composables/useViewCardDensity";
 import {
   useBookSourceStore,
   useNavigationStore,
@@ -77,10 +66,7 @@ const {
 const explorableSources = computed(() => bookSourceStore.explorableSources);
 const initializingSources = ref(true);
 const sourceSystemStarting = computed(
-  () =>
-    initializingSources.value ||
-    bookSourceStore.loading ||
-    bookSourceStore.capabilityDetecting,
+  () => initializingSources.value || bookSourceStore.loading || bookSourceStore.capabilityDetecting,
 );
 
 // ── 上次选中的书源 tab 持久化 ────────────────────────────────────────────
@@ -92,7 +78,7 @@ const activeTabStore = useDynamicConfig<{ tab: string }>({
   legacyKeys: [],
 });
 
-/** 当前选中的书源 tab（fileName），持久化到本地存储 */
+/** 当前选中的书源 tab（sourceKey），持久化到本地存储 */
 const activeSourceTab = computed<string>({
   get: () => activeTabStore.state.tab,
   set: (v) => activeTabStore.replace({ tab: v }),
@@ -120,9 +106,7 @@ const tabLayoutMode = computed<ExploreTabLayoutMode>({
 const isMultiLineTabs = computed(() => tabLayoutMode.value === "multi");
 
 function toggleSourceTabsLayout() {
-  const nextMode: ExploreTabLayoutMode = isMultiLineTabs.value
-    ? "single"
-    : "multi";
+  const nextMode: ExploreTabLayoutMode = isMultiLineTabs.value ? "single" : "multi";
   tabLayoutMode.value = nextMode;
   if (nextMode === "single") {
     void nextTick(() => {
@@ -179,9 +163,7 @@ const exploreTabOrderStore = useDynamicConfig<{ order: string[] }>({
     try {
       const parsed = JSON.parse(raw);
       return {
-        order: Array.isArray(parsed)
-          ? parsed.filter((item) => typeof item === "string")
-          : [],
+        order: Array.isArray(parsed) ? parsed.filter((item) => typeof item === "string") : [],
       };
     } catch {
       return null;
@@ -192,25 +174,29 @@ const exploreTabOrderStore = useDynamicConfig<{ order: string[] }>({
 
 const tabOrder = computed(() => exploreTabOrderStore.state.order);
 
+function sourceKeyOf(source: BookSourceMeta): string {
+  return source.sourceKey || `${source.sourceDir}::${source.fileName}`;
+}
+
 /** 按 tabOrder 对书源排序，同时过滤用户禁用的发现源 */
 const sortedSources = computed<BookSourceMeta[]>(() => {
   const order = tabOrder.value;
   const all = explorableSources.value.filter((s) =>
-    bookSourceStore.isExploreUserEnabled(s.fileName),
+    bookSourceStore.isExploreUserEnabled(sourceKeyOf(s)),
   );
   if (!order.length) {
     return all;
   }
   const inOrder = order
-    .map((fn) => all.find((s) => s.fileName === fn))
+    .map((key) => all.find((s) => sourceKeyOf(s) === key || s.fileName === key))
     .filter((s): s is BookSourceMeta => !!s);
-  const rest = all.filter((s) => !order.includes(s.fileName));
+  const rest = all.filter((s) => !order.includes(sourceKeyOf(s)));
   return [...inOrder, ...rest];
 });
 
 // 所有书源都预加载分类列表（GETALL 轻量），切换时再按需加载具体书籍内容
 const prefetchedSourceTabs = computed(
-  () => new Set(sortedSources.value.map((s) => s.fileName)),
+  () => new Set(sortedSources.value.map((s) => sourceKeyOf(s))),
 );
 
 function saveTabOrder(order: string[]) {
@@ -226,31 +212,29 @@ function openSortModal() {
 
 // ── 当前书源元信息 ───────────────────────────────────────────────────────
 const currentSource = computed<BookSourceMeta | undefined>(() =>
-  explorableSources.value.find((s) => s.fileName === activeSourceTab.value),
+  explorableSources.value.find((s) => sourceKeyOf(s) === activeSourceTab.value),
 );
 
 const activeSourceCanSearch = computed(() => {
-  const fileName = activeSourceTab.value;
-  if (!fileName) {
+  const source = currentSource.value;
+  if (!source) {
     return false;
   }
-  const caps = bookSourceStore.getCachedCapabilities(fileName);
-  return !!(
-    caps?.has("search") && bookSourceStore.isSearchUserEnabled(fileName)
-  );
+  const caps = bookSourceStore.getCachedCapabilities(source);
+  return !!(caps?.has("search") && bookSourceStore.isSearchUserEnabled(sourceKeyOf(source)));
 });
 // ── 刷新（触发当前书源 Section 刷新） ───────────────────────────────────
 const refreshing = ref(false);
 const reloadingAll = ref(false);
 const sourceRefreshVersion = reactive<Record<string, number>>({});
 
-function bumpSourceRefreshVersion(fileName: string) {
-  sourceRefreshVersion[fileName] = (sourceRefreshVersion[fileName] ?? 0) + 1;
+function bumpSourceRefreshVersion(sourceKey: string) {
+  sourceRefreshVersion[sourceKey] = (sourceRefreshVersion[sourceKey] ?? 0) + 1;
 }
 
 function bumpAllSourceRefreshVersions() {
   for (const src of bookSourceStore.sources) {
-    bumpSourceRefreshVersion(src.fileName);
+    bumpSourceRefreshVersion(sourceKeyOf(src));
   }
 }
 
@@ -370,6 +354,7 @@ const {
   showDrawer,
   drawerBookUrl,
   drawerFileName,
+  drawerSourceDir,
   drawerSourceName,
   drawerSourceType,
   openDetail,
@@ -390,8 +375,8 @@ function navigateToActiveSourceSearch() {
   navigationStore.navigateToSearch(activeSourceTab.value);
 }
 
-function handleOpenBookByUrl(bookUrl: string, fileName: string) {
-  openDetailByUrl(bookUrl, fileName);
+function handleOpenBookByUrl(bookUrl: string, fileName: string, sourceDir?: string) {
+  openDetailByUrl(bookUrl, fileName, sourceDir);
 }
 
 // ── Tab 右键 / 长按菜单 ──────────────────────────────────────────────────
@@ -415,9 +400,8 @@ const tabMenuOptions = computed(() => {
   if (!src) {
     return [];
   }
-  const caps = bookSourceStore.getCachedCapabilities(src.fileName);
-  const hasSearch =
-    caps?.has("search") && bookSourceStore.isSearchUserEnabled(src.fileName);
+  const caps = bookSourceStore.getCachedCapabilities(src);
+  const hasSearch = caps?.has("search") && bookSourceStore.isSearchUserEnabled(sourceKeyOf(src));
   const opts: { label: string; key: string; type?: string }[] = [];
   if (hasSearch) {
     opts.push({ label: "使用此书源搜索", key: "search" });
@@ -485,7 +469,7 @@ async function handleTabMenuSelect(key: string) {
   }
 
   if (key === "search") {
-    navigationStore.navigateToSearch(src.fileName);
+    navigationStore.navigateToSearch(sourceKeyOf(src));
   } else if (key === "disable") {
     try {
       await bookSourceStore.toggleSource(src.fileName, false, src.sourceDir);
@@ -508,9 +492,7 @@ async function handleTabMenuSelect(key: string) {
           });
           message.success("已删除");
         } catch (e: unknown) {
-          message.error(
-            `删除失败: ${e instanceof Error ? e.message : String(e)}`,
-          );
+          message.error(`删除失败: ${e instanceof Error ? e.message : String(e)}`);
         }
       },
     });
@@ -518,17 +500,14 @@ async function handleTabMenuSelect(key: string) {
 }
 
 // ── 章节阅读 ─────────────────────────────────────────────────────────────
-const {
-  getShelfId,
-  ensureLoaded: ensureShelfLoaded,
-  isPrivateShelfBook,
-} = bookshelfStore;
+const { getShelfId, ensureLoaded: ensureShelfLoaded, isPrivateShelfBook } = bookshelfStore;
 const { privacyExitTick } = storeToRefs(privacyModeStore);
 const {
   showReader,
   readerChapterUrl,
   readerChapterName,
   readerFileName,
+  readerSourceDir,
   readerChapters,
   readerCurrentIndex,
   readerBookInfo,
@@ -542,6 +521,7 @@ const {
   showDrawer,
   drawerBookUrl,
   drawerFileName,
+  drawerSourceDir,
   privacyExitTick,
   runChapterList,
   cancelTask,
@@ -568,18 +548,18 @@ const unlisteners: (() => void)[] = [];
  *   enable/disable 切换时 SourceExploreSection 会由 v-for 重新挂载/卸载，无需手动 bump。
  */
 async function refreshSingleSource(fileName: string) {
-  const wasExplorable = bookSourceStore.explorableSources.some(
-    (s) => s.fileName === fileName,
+  const beforeKeys = new Set(
+    bookSourceStore.explorableSources.filter((s) => s.fileName === fileName).map(sourceKeyOf),
   );
   bookSourceStore.invalidateCapability(fileName);
   await clearExploreCache(fileName);
   await bookSourceStore.loadSources();
   // 只有"内容变更但仍可发现"时才 bump（新挂载的 Section 会在 onMounted 中自动加载）
-  const isStillExplorable = bookSourceStore.explorableSources.some(
-    (s) => s.fileName === fileName,
-  );
-  if (wasExplorable && isStillExplorable) {
-    bumpSourceRefreshVersion(fileName);
+  for (const source of bookSourceStore.explorableSources) {
+    const key = sourceKeyOf(source);
+    if (source.fileName === fileName && beforeKeys.has(key)) {
+      bumpSourceRefreshVersion(key);
+    }
   }
 }
 
@@ -611,13 +591,11 @@ onMounted(async () => {
     // loadSources 完成后 explorableSources 已通过 hasExplore 元数据立即可用，
     // 无需 await detectAllCapabilities（已在 loadSources 内后台启动）。
     // 恢复上次选中的书源 tab
-    if (
-      !bookSourceStore.explorableSources.some(
-        (s) => s.fileName === activeSourceTab.value,
-      )
-    ) {
+    if (!bookSourceStore.explorableSources.some((s) => sourceKeyOf(s) === activeSourceTab.value)) {
       await activeTabStore.replace({
-        tab: bookSourceStore.explorableSources[0]?.fileName ?? "",
+        tab: bookSourceStore.explorableSources[0]
+          ? sourceKeyOf(bookSourceStore.explorableSources[0])
+          : "",
       });
     }
     if (evTabsRef.value) {
@@ -680,14 +658,14 @@ function switchActiveSourceTab(direction: "prev" | "next") {
   if (list.length < 2) {
     return;
   }
-  const idx = list.findIndex((s) => s.fileName === activeSourceTab.value);
+  const idx = list.findIndex((s) => sourceKeyOf(s) === activeSourceTab.value);
   if (idx < 0) {
     return;
   }
   if (direction === "next" && idx < list.length - 1) {
-    activeSourceTab.value = list[idx + 1].fileName;
+    activeSourceTab.value = sourceKeyOf(list[idx + 1]);
   } else if (direction === "prev" && idx > 0) {
-    activeSourceTab.value = list[idx - 1].fileName;
+    activeSourceTab.value = sourceKeyOf(list[idx - 1]);
   }
 }
 
@@ -712,9 +690,7 @@ function scrollActiveSourceTabIntoView() {
   if (!evTabsRef.value) {
     return;
   }
-  const activeTabEl = evTabsRef.value.querySelector<HTMLElement>(
-    ".n-tabs-tab--active",
-  );
+  const activeTabEl = evTabsRef.value.querySelector<HTMLElement>(".n-tabs-tab--active");
   activeTabEl?.scrollIntoView({
     block: "nearest",
     inline: "center",
@@ -733,8 +709,7 @@ function setupTabsWheelScroll(el: HTMLElement): (() => void) | undefined {
         return;
       }
       // 有水平滚动量时直接滚动，否则把垂直量映射到水平
-      const delta =
-        Math.abs(e.deltaX) > Math.abs(e.deltaY) ? e.deltaX : e.deltaY;
+      const delta = Math.abs(e.deltaX) > Math.abs(e.deltaY) ? e.deltaX : e.deltaY;
       if (delta === 0) {
         return;
       }
@@ -780,7 +755,7 @@ watch(
   () =>
     [
       activeSourceTab.value,
-      sortedSources.value.map((src) => src.fileName).join("|"),
+      sortedSources.value.map((src) => sourceKeyOf(src)).join("|"),
       tabLayoutMode.value,
     ] as const,
   async () => {
@@ -796,9 +771,7 @@ watch(
   <div class="explore-view" :style="explorerStyle">
     <AppPageHeader title="发现">
       <template #title-extra>
-        <span class="ev-header__sub"
-          >{{ explorableSources.length }} 个发现源</span
-        >
+        <span class="ev-header__sub">{{ explorableSources.length }} 个发现源</span>
       </template>
       <template #actions>
         <MobileToolbarMenu
@@ -852,11 +825,7 @@ watch(
           <!-- 封面开关（仅卡片/列表模式） -->
           <n-tooltip v-if="displayMode !== 'cover'" trigger="hover">
             <template #trigger>
-              <n-button
-                size="small"
-                quaternary
-                @click="showCovers = !showCovers"
-              >
+              <n-button size="small" quaternary @click="showCovers = !showCovers">
                 <template #icon>
                   <Eye v-if="showCovers" :size="14" />
                   <EyeOff v-else :size="14" />
@@ -900,12 +869,7 @@ watch(
           <!-- 刷新按钮 -->
           <n-tooltip trigger="hover">
             <template #trigger>
-              <n-button
-                size="small"
-                quaternary
-                :loading="reloadingAll"
-                @click="handleForceReload"
-              >
+              <n-button size="small" quaternary :loading="reloadingAll" @click="handleForceReload">
                 全部重载
               </n-button>
             </template>
@@ -914,12 +878,7 @@ watch(
 
           <n-tooltip trigger="hover">
             <template #trigger>
-              <n-button
-                size="small"
-                quaternary
-                :loading="refreshing"
-                @click="handleRefresh"
-              >
+              <n-button size="small" quaternary :loading="refreshing" @click="handleRefresh">
                 <template #icon>
                   <RefreshCw :size="16" />
                 </template>
@@ -977,8 +936,8 @@ watch(
           </template>
           <n-tab-pane
             v-for="src in sortedSources"
-            :key="src.fileName"
-            :name="src.fileName"
+            :key="sourceKeyOf(src)"
+            :name="sourceKeyOf(src)"
             display-directive="show"
           >
             <template #tab>
@@ -1002,9 +961,7 @@ watch(
             </template>
             <!-- 副标题行 -->
             <div v-if="currentSource?.description" class="ev-subtitle">
-              <span class="ev-subtitle__text">{{
-                currentSource.description
-              }}</span>
+              <span class="ev-subtitle__text">{{ currentSource.description }}</span>
               <n-button
                 v-if="activeSourceCanSearch"
                 text
@@ -1016,10 +973,7 @@ watch(
                 使用此书源搜索
               </n-button>
             </div>
-            <div
-              v-else-if="activeSourceCanSearch"
-              class="ev-subtitle ev-subtitle--empty"
-            >
+            <div v-else-if="activeSourceCanSearch" class="ev-subtitle ev-subtitle--empty">
               <n-button
                 text
                 size="tiny"
@@ -1035,14 +989,15 @@ watch(
             <div class="ev-content app-scrollbar">
               <SourceExploreSection
                 :source="src"
-                :active="activeSourceTab === src.fileName"
-                :prefetch="prefetchedSourceTabs.has(src.fileName)"
+                :active="activeSourceTab === sourceKeyOf(src)"
+                :prefetch="prefetchedSourceTabs.has(sourceKeyOf(src))"
                 :show-covers="showCovers"
                 :display-mode="displayMode"
-                :reload-version="sourceRefreshVersion[src.fileName] ?? 0"
+                :reload-version="sourceRefreshVersion[sourceKeyOf(src)] ?? 0"
                 @select="openDetail"
                 @open-book="
-                  (url: string) => handleOpenBookByUrl(url, src.fileName)
+                  (url: string, fileName: string, sourceDir?: string) =>
+                    handleOpenBookByUrl(url, fileName, sourceDir)
                 "
                 @refreshing="onSectionRefreshing"
               />
@@ -1056,17 +1011,14 @@ watch(
       title="书源系统启动中"
       desc="正在加载书源并检测发现能力"
     />
-    <AppEmpty
-      v-else
-      title="暂无可用的发现书源"
-      desc="请先在书源管理中添加支持「发现」的书源"
-    />
+    <AppEmpty v-else title="暂无可用的发现书源" desc="请先在书源管理中添加支持「发现」的书源" />
 
     <!-- 书籍详情抽屉 -->
     <BookDetailDrawer
       v-model:show="showDrawer"
       :book-url="drawerBookUrl"
       :file-name="drawerFileName"
+      :source-dir="drawerSourceDir"
       :source-name="drawerSourceName"
       :source-type="drawerSourceType"
       @read-chapter="onReadChapter"
@@ -1079,6 +1031,7 @@ watch(
       :chapter-url="readerChapterUrl"
       :chapter-name="readerChapterName"
       :file-name="readerFileName"
+      :source-dir="readerSourceDir"
       :chapters="readerChapters"
       :shelf-book-id="readerShelfId"
       :book-info="readerBookInfo"
@@ -1101,24 +1054,18 @@ watch(
       @update:show="updateDisclaimerShow"
     >
       <div class="disclaimer-body">
-        <p>
-          本软件所有书源均来源于社区用户共享，软件本身不提供、不存储任何内容。
-        </p>
+        <p>本软件所有书源均来源于社区用户共享，软件本身不提供、不存储任何内容。</p>
         <p>
           书源内容由第三方网站提供，版权归原作者及原网站所有。若您发现任何书源涉及侵权内容，请立即停止使用该书源，并通知相关内容提供方。
         </p>
-        <p>
-          使用书源所产生的一切法律责任由使用者本人承担，与本软件开发者无关。
-        </p>
+        <p>使用书源所产生的一切法律责任由使用者本人承担，与本软件开发者无关。</p>
       </div>
       <n-checkbox v-model:checked="disclaimerDontShow" class="disclaimer-check">
         不再显示
       </n-checkbox>
       <template #footer>
         <div style="display: flex; justify-content: flex-end">
-          <n-button type="primary" @click="confirmDisclaimer"
-            >我已了解</n-button
-          >
+          <n-button type="primary" @click="confirmDisclaimer">我已了解</n-button>
         </div>
       </template>
     </n-modal>

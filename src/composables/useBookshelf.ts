@@ -23,6 +23,7 @@ export interface ShelfBook {
   groupId?: string;
   bookUrl: string;
   fileName: string;
+  sourceDir?: string;
   sourceName: string;
   lastChapter?: string;
   addedAt: number;
@@ -55,6 +56,7 @@ export interface UpdateShelfBookPayload {
   groupId?: string;
   bookUrl: string;
   fileName: string;
+  sourceDir?: string;
   sourceName: string;
   lastChapter?: string;
   totalChapters: number;
@@ -81,6 +83,7 @@ export interface PatchShelfBookPayload {
   groupId?: string;
   bookUrl?: string;
   fileName?: string;
+  sourceDir?: string;
   sourceName?: string;
   lastChapter?: string;
   totalChapters?: number;
@@ -111,6 +114,7 @@ export interface AddBookPayload {
   kind?: string;
   groupId?: string;
   bookUrl: string;
+  sourceDir?: string;
   lastChapter?: string;
   /** 书源类型："novel"（默认）| "comic" | "video" */
   sourceType?: string;
@@ -138,14 +142,28 @@ export interface EpisodeProgress {
 // ── 全局状态（单例） ──────────────────────────────────────────────────────
 
 const books = ref<ShelfBook[]>([]);
-/** bookUrl|fileName → id 的索引，用于快速判断是否在书架 */
-const shelfIndex = ref(new Map());
+/** bookUrl|fileName(|sourceDir) → id 的索引，用于快速判断是否在书架 */
+const shelfIndex = ref(new Map<string, string>());
 let initialized = false;
+
+function normalizeSourceDir(sourceDir?: string): string {
+  return sourceDir?.trim() ?? "";
+}
+
+function shelfIndexKey(bookUrl: string, fileName: string, sourceDir?: string): string {
+  const dir = normalizeSourceDir(sourceDir);
+  return dir ? `${bookUrl}|${fileName}|${dir}` : `${bookUrl}|${fileName}`;
+}
 
 function buildIndex(list: ShelfBook[]) {
   const map = new Map<string, string>();
   for (const b of list) {
-    map.set(`${b.bookUrl}|${b.fileName}`, b.id);
+    const legacyKey = shelfIndexKey(b.bookUrl, b.fileName);
+    const exactKey = shelfIndexKey(b.bookUrl, b.fileName, b.sourceDir);
+    map.set(exactKey, b.id);
+    if (!normalizeSourceDir(b.sourceDir) && !map.has(legacyKey)) {
+      map.set(legacyKey, b.id);
+    }
   }
   shelfIndex.value = map;
 }
@@ -158,11 +176,7 @@ const TIMEOUT = 10_000;
 export function useBookshelf() {
   /** 加载/刷新书架列表 */
   async function loadBooks(): Promise<ShelfBook[]> {
-    const list = await invokeWithTimeout<ShelfBook[]>(
-      "bookshelf_list",
-      undefined,
-      TIMEOUT,
-    );
+    const list = await invokeWithTimeout<ShelfBook[]>("bookshelf_list", undefined, TIMEOUT);
     books.value = list;
     buildIndex(list);
     initialized = true;
@@ -256,19 +270,12 @@ export function useBookshelf() {
 
   /** 更新书籍隐私标记 */
   async function setBookPrivate(id: string, isPrivate: boolean): Promise<void> {
-    await invokeWithTimeout<void>(
-      "bookshelf_set_private",
-      { id, isPrivate },
-      TIMEOUT,
-    );
+    await invokeWithTimeout<void>("bookshelf_set_private", { id, isPrivate }, TIMEOUT);
     await loadBooks();
   }
 
   /** 保存章节目录 */
-  async function saveChapters(
-    id: string,
-    chapters: CachedChapter[],
-  ): Promise<void> {
+  async function saveChapters(id: string, chapters: CachedChapter[]): Promise<void> {
     await invokeWithTimeout<void>(
       "bookshelf_save_chapters",
       {
@@ -281,11 +288,7 @@ export function useBookshelf() {
 
   /** 获取缓存的章节目录 */
   async function getChapters(id: string): Promise<CachedChapter[]> {
-    return invokeWithTimeout<CachedChapter[]>(
-      "bookshelf_get_chapters",
-      { id },
-      TIMEOUT,
-    );
+    return invokeWithTimeout<CachedChapter[]>("bookshelf_get_chapters", { id }, TIMEOUT);
   }
 
   /** 更新书籍元信息，可选替换章节目录 */
@@ -325,6 +328,7 @@ export function useBookshelf() {
         groupId: patch.groupId ?? current.groupId,
         bookUrl: patch.bookUrl ?? current.bookUrl,
         fileName: patch.fileName ?? current.fileName,
+        sourceDir: patch.sourceDir ?? current.sourceDir,
         sourceName: patch.sourceName ?? current.sourceName,
         lastChapter: patch.lastChapter ?? current.lastChapter,
         totalChapters: patch.totalChapters ?? current.totalChapters,
@@ -346,9 +350,7 @@ export function useBookshelf() {
   }
 
   /** 恢复最近一次整本换源 */
-  async function restoreSourceSwitch(
-    id: string,
-  ): Promise<SourceSwitchRestoreResult> {
+  async function restoreSourceSwitch(id: string): Promise<SourceSwitchRestoreResult> {
     const result = await invokeWithTimeout<SourceSwitchRestoreResult>(
       "bookshelf_restore_source_switch",
       { id },
@@ -359,11 +361,7 @@ export function useBookshelf() {
   }
 
   /** 缓存单章正文 */
-  async function saveContent(
-    id: string,
-    chapterIndex: number,
-    content: string,
-  ): Promise<void> {
+  async function saveContent(id: string, chapterIndex: number, content: string): Promise<void> {
     await invokeWithTimeout<void>(
       "bookshelf_save_content",
       {
@@ -376,10 +374,7 @@ export function useBookshelf() {
   }
 
   /** 读取缓存正文 */
-  async function getContent(
-    id: string,
-    chapterIndex: number,
-  ): Promise<string | null> {
+  async function getContent(id: string, chapterIndex: number): Promise<string | null> {
     return invokeWithTimeout<string | null>(
       "bookshelf_get_content",
       {
@@ -391,10 +386,7 @@ export function useBookshelf() {
   }
 
   /** 删除单章正文缓存（幂等：文件不存在时也返回成功） */
-  async function deleteContent(
-    id: string,
-    chapterIndex: number,
-  ): Promise<void> {
+  async function deleteContent(id: string, chapterIndex: number): Promise<void> {
     await invokeWithTimeout<void>(
       "bookshelf_delete_content",
       {
@@ -407,18 +399,12 @@ export function useBookshelf() {
 
   /** 获取已缓存正文的章节索引集合（用于目录面板标记"已下载"状态） */
   async function getCachedIndices(id: string): Promise<Set<number>> {
-    const list = await invokeWithTimeout<number[]>(
-      "bookshelf_get_cached_indices",
-      { id },
-      TIMEOUT,
-    );
+    const list = await invokeWithTimeout<number[]>("bookshelf_get_cached_indices", { id }, TIMEOUT);
     return new Set(list);
   }
 
   /** 获取全书各集播放进度 */
-  async function getEpisodeProgress(
-    id: string,
-  ): Promise<Record<string, EpisodeProgress>> {
+  async function getEpisodeProgress(id: string): Promise<Record<string, EpisodeProgress>> {
     return invokeWithTimeout<Record<string, EpisodeProgress>>(
       "bookshelf_get_episode_progress",
       { id },
@@ -441,13 +427,23 @@ export function useBookshelf() {
   }
 
   /** 判断是否在书架中（同步，基于本地缓存） */
-  function isOnShelf(bookUrl: string, fileName: string): boolean {
-    return shelfIndex.value.has(`${bookUrl}|${fileName}`);
+  function isOnShelf(bookUrl: string, fileName: string, sourceDir?: string): boolean {
+    if (shelfIndex.value.has(shelfIndexKey(bookUrl, fileName, sourceDir))) {
+      return true;
+    }
+    return normalizeSourceDir(sourceDir)
+      ? shelfIndex.value.has(shelfIndexKey(bookUrl, fileName))
+      : false;
   }
 
   /** 获取书架中该书的 ID（不在书架返回 undefined） */
-  function getShelfId(bookUrl: string, fileName: string): string | undefined {
-    return shelfIndex.value.get(`${bookUrl}|${fileName}`);
+  function getShelfId(bookUrl: string, fileName: string, sourceDir?: string): string | undefined {
+    return (
+      shelfIndex.value.get(shelfIndexKey(bookUrl, fileName, sourceDir)) ??
+      (normalizeSourceDir(sourceDir)
+        ? shelfIndex.value.get(shelfIndexKey(bookUrl, fileName))
+        : undefined)
+    );
   }
 
   /** 判断书架中的书是否为隐私书籍 */

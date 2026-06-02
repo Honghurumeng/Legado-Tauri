@@ -201,9 +201,10 @@ async function runBookInfo() {
     );
     st.output = JSON.stringify(raw, null, 2);
     st.status = 'ok';
-    // 链式：详情返回的 bookUrl 填入目录
+    // 链式：详情返回的 tocUrl 才是目录入口；缺失时再回退到 bookUrl
     const detail = raw as Record<string, unknown>;
-    const tocUrl = (detail?.bookUrl as string) || bookInfoUrl.value;
+    const tocUrl =
+      (detail?.tocUrl as string) || (detail?.bookUrl as string) || bookInfoUrl.value;
     if (tocUrl && !chapterListUrl.value) {
       chapterListUrl.value = tocUrl;
     }
@@ -336,7 +337,7 @@ function fillChapterUrlFromList() {
 function fillBookUrlFromDetail() {
   try {
     const obj = JSON.parse(runStates.value.bookInfo.output) as Record<string, unknown>;
-    const url = (obj?.bookUrl as string) || bookInfoUrl.value;
+    const url = (obj?.tocUrl as string) || (obj?.bookUrl as string) || bookInfoUrl.value;
     if (url) {
       chapterListUrl.value = url;
       activeTab.value = 'chapterList';
@@ -515,7 +516,7 @@ function clearState(tabId: TabId) {
           </div>
           <div v-if="runStates.bookInfo.status === 'ok'" class="chain-actions">
             <span class="chain-label">链式 →</span>
-            <n-button size="tiny" @click="fillBookUrlFromDetail">将 bookUrl 填入"目录"</n-button>
+            <n-button size="tiny" @click="fillBookUrlFromDetail">将 tocUrl 填入"目录"</n-button>
           </div>
           <div v-if="runStates.bookInfo.output" class="manual-output">
             <div class="output-hd">
@@ -563,7 +564,7 @@ function clearState(tabId: TabId) {
           <div class="manual-inputs">
             <n-input
               v-model:value="chapterListUrl"
-              placeholder="书籍 URL（bookUrl）"
+              placeholder="目录 URL（tocUrl；没有时可用 bookUrl）"
               size="small"
               :disabled="runStates.chapterList.status === 'running'"
               @keydown.enter="runChapterList"

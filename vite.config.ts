@@ -9,7 +9,7 @@ import { defineConfig } from 'vite';
 
 const host = process.env.TAURI_DEV_HOST;
 const hasHost = typeof host === 'string' && host.length > 0;
-const devHost = hasHost ? host : '0.0.0.0';
+const devHost = hasHost ? host : '127.0.0.1';
 const buildTarget = process.env.LEGADO_BUILD_TARGET;
 const isHarmonyBuild = buildTarget === 'harmony';
 

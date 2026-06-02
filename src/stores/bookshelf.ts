@@ -2,8 +2,8 @@
  * bookshelf store — 书架列表、章节缓存、阅读进度和目录检查状态。
  */
 
-import { defineStore } from 'pinia';
-import { computed, ref } from 'vue';
+import { defineStore } from "pinia";
+import { computed, ref } from "vue";
 import type {
   AddBookPayload,
   CachedChapter,
@@ -12,15 +12,15 @@ import type {
   ShelfBook,
   SourceSwitchRestoreResult,
   UpdateShelfBookPayload,
-} from '@/composables/useBookshelf';
-import { eventListenSync } from '@/composables/useEventBus';
-import { invokeWithTimeout } from '@/composables/useInvoke';
-import { safeRandomUUID } from '@/utils/uuid';
+} from "@/composables/useBookshelf";
+import { eventListenSync } from "@/composables/useEventBus";
+import { invokeWithTimeout } from "@/composables/useInvoke";
+import { safeRandomUUID } from "@/utils/uuid";
 
 /** 本地 TXT 书籍的虚拟书源文件名（用于识别本地书籍） */
-export const LOCAL_TXT_FILE_NAME = '__local-txt__';
+export const LOCAL_TXT_FILE_NAME = "__local-txt__";
 /** 本地 TXT 书籍的虚拟书源名称 */
-export const LOCAL_TXT_SOURCE_NAME = '本地 TXT';
+export const LOCAL_TXT_SOURCE_NAME = "本地 TXT";
 
 /** 判断一本书是否为本地 TXT 导入 */
 export function isLocalTxtBook(book: { fileName: string }): boolean {
@@ -29,9 +29,9 @@ export function isLocalTxtBook(book: { fileName: string }): boolean {
 
 const TIMEOUT = 10_000;
 
-export const useBookshelfStore = defineStore('bookshelf', () => {
+export const useBookshelfStore = defineStore("bookshelf", () => {
   const books = ref<ShelfBook[]>([]);
-  /** bookUrl|fileName → id 的索引，用于快速判断是否在书架 */
+  /** bookUrl|fileName(|sourceDir) → id 的索引，用于快速判断是否在书架 */
   const shelfIndex = ref(new Map<string, string>());
   const loading = ref(false);
   /** 正在检测目录更新的书籍 ID 集合，用于书架卡片显示后台检查状态。 */
@@ -39,10 +39,24 @@ export const useBookshelfStore = defineStore('bookshelf', () => {
   const tocRefreshCounts = new Map<string, number>();
   let initialized = false;
 
+  function normalizeSourceDir(sourceDir?: string): string {
+    return sourceDir?.trim() ?? "";
+  }
+
+  function shelfIndexKey(bookUrl: string, fileName: string, sourceDir?: string): string {
+    const dir = normalizeSourceDir(sourceDir);
+    return dir ? `${bookUrl}|${fileName}|${dir}` : `${bookUrl}|${fileName}`;
+  }
+
   function buildIndex(list: ShelfBook[]) {
     const map = new Map<string, string>();
     for (const b of list) {
-      map.set(`${b.bookUrl}|${b.fileName}`, b.id);
+      const legacyKey = shelfIndexKey(b.bookUrl, b.fileName);
+      const exactKey = shelfIndexKey(b.bookUrl, b.fileName, b.sourceDir);
+      map.set(exactKey, b.id);
+      if (!normalizeSourceDir(b.sourceDir) && !map.has(legacyKey)) {
+        map.set(legacyKey, b.id);
+      }
     }
     shelfIndex.value = map;
   }
@@ -51,7 +65,7 @@ export const useBookshelfStore = defineStore('bookshelf', () => {
   async function loadBooks(): Promise<ShelfBook[]> {
     loading.value = true;
     try {
-      const list = await invokeWithTimeout<ShelfBook[]>('bookshelf_list', undefined, TIMEOUT);
+      const list = await invokeWithTimeout<ShelfBook[]>("bookshelf_list", undefined, TIMEOUT);
       books.value = list;
       buildIndex(list);
       initialized = true;
@@ -77,10 +91,10 @@ export const useBookshelfStore = defineStore('bookshelf', () => {
     const bookUrl = book.bookUrl.trim();
     const sourceFileName = fileName.trim();
     if (!bookUrl || !sourceFileName) {
-      throw new Error('缺少书籍链接或书源文件名，无法加入书架');
+      throw new Error("缺少书籍链接或书源文件名，无法加入书架");
     }
     const result = await invokeWithTimeout<ShelfBook>(
-      'bookshelf_add',
+      "bookshelf_add",
       { book: { ...book, bookUrl }, fileName: sourceFileName, sourceName },
       TIMEOUT,
     );
@@ -90,7 +104,7 @@ export const useBookshelfStore = defineStore('bookshelf', () => {
 
   /** 移出书架 */
   async function removeFromShelf(id: string): Promise<void> {
-    await invokeWithTimeout<void>('bookshelf_remove', { id }, TIMEOUT);
+    await invokeWithTimeout<void>("bookshelf_remove", { id }, TIMEOUT);
     await loadBooks();
   }
 
@@ -111,17 +125,17 @@ export const useBookshelfStore = defineStore('bookshelf', () => {
     const uuid = safeRandomUUID();
     const bookUrl = `local-txt://${uuid}`;
 
-    const lastChapterTitle = payload.chapters[payload.chapters.length - 1]?.title ?? '';
+    const lastChapterTitle = payload.chapters[payload.chapters.length - 1]?.title ?? "";
 
     const shelfBook = await invokeWithTimeout<ShelfBook>(
-      'bookshelf_add',
+      "bookshelf_add",
       {
         book: {
           name: payload.title,
           author: payload.author || undefined,
           bookUrl,
           lastChapter: lastChapterTitle || undefined,
-          sourceType: 'novel',
+          sourceType: "novel",
         },
         fileName: LOCAL_TXT_FILE_NAME,
         sourceName: LOCAL_TXT_SOURCE_NAME,
@@ -146,14 +160,14 @@ export const useBookshelfStore = defineStore('bookshelf', () => {
     );
 
     await invokeWithTimeout<void>(
-      'bookshelf_save_chapters',
+      "bookshelf_save_chapters",
       { id: shelfBook.id, chapters: cachedChapters },
       TIMEOUT,
     );
 
     // 批量写入正文（单次 IPC，不受章节数影响）
     await invokeWithTimeout<void>(
-      'bookshelf_save_txt_chapters',
+      "bookshelf_save_txt_chapters",
       {
         id: shelfBook.id,
         chapters: chapterContents.map((ch, idx) => ({
@@ -166,7 +180,7 @@ export const useBookshelfStore = defineStore('bookshelf', () => {
 
     // 更新总章节数
     await invokeWithTimeout<void>(
-      'bookshelf_update_book',
+      "bookshelf_update_book",
       {
         book: {
           id: shelfBook.id,
@@ -177,12 +191,13 @@ export const useBookshelfStore = defineStore('bookshelf', () => {
           kind: shelfBook.kind,
           bookUrl: shelfBook.bookUrl,
           fileName: shelfBook.fileName,
+          sourceDir: shelfBook.sourceDir,
           sourceName: shelfBook.sourceName,
           lastChapter: lastChapterTitle || undefined,
           totalChapters: cachedChapters.length,
           readChapterIndex: shelfBook.readChapterIndex,
           readChapterUrl: shelfBook.readChapterUrl,
-          sourceType: 'novel',
+          sourceType: "novel",
           addedAt: shelfBook.addedAt,
           lastReadAt: shelfBook.lastReadAt,
           readPageIndex: shelfBook.readPageIndex,
@@ -202,7 +217,7 @@ export const useBookshelfStore = defineStore('bookshelf', () => {
 
   /** 获取单本详情 */
   async function getShelfBook(id: string): Promise<ShelfBook> {
-    return invokeWithTimeout<ShelfBook>('bookshelf_get', { id }, TIMEOUT);
+    return invokeWithTimeout<ShelfBook>("bookshelf_get", { id }, TIMEOUT);
   }
 
   /** 更新阅读进度 */
@@ -218,7 +233,7 @@ export const useBookshelfStore = defineStore('bookshelf', () => {
     },
   ): Promise<void> {
     await invokeWithTimeout<void>(
-      'bookshelf_update_progress',
+      "bookshelf_update_progress",
       {
         id,
         chapterIndex,
@@ -253,18 +268,18 @@ export const useBookshelfStore = defineStore('bookshelf', () => {
 
   /** 更新书籍隐私标记 */
   async function setBookPrivate(id: string, isPrivate: boolean): Promise<void> {
-    await invokeWithTimeout<void>('bookshelf_set_private', { id, isPrivate }, TIMEOUT);
+    await invokeWithTimeout<void>("bookshelf_set_private", { id, isPrivate }, TIMEOUT);
     await loadBooks();
   }
 
   /** 保存章节目录 */
   async function saveChapters(id: string, chapters: CachedChapter[]): Promise<void> {
-    await invokeWithTimeout<void>('bookshelf_save_chapters', { id, chapters }, TIMEOUT);
+    await invokeWithTimeout<void>("bookshelf_save_chapters", { id, chapters }, TIMEOUT);
   }
 
   /** 获取缓存的章节目录 */
   async function getChapters(id: string): Promise<CachedChapter[]> {
-    return invokeWithTimeout<CachedChapter[]>('bookshelf_get_chapters', { id }, TIMEOUT);
+    return invokeWithTimeout<CachedChapter[]>("bookshelf_get_chapters", { id }, TIMEOUT);
   }
 
   function beginTocRefresh(id: string): void {
@@ -302,7 +317,7 @@ export const useBookshelfStore = defineStore('bookshelf', () => {
     chapters?: CachedChapter[],
   ): Promise<ShelfBook> {
     const result = await invokeWithTimeout<ShelfBook>(
-      'bookshelf_update_book',
+      "bookshelf_update_book",
       { book, chapters: chapters ?? null },
       TIMEOUT,
     );
@@ -318,7 +333,7 @@ export const useBookshelfStore = defineStore('bookshelf', () => {
   ): Promise<ShelfBook> {
     const current =
       books.value.find((item) => item.id === id) ??
-      (await invokeWithTimeout<ShelfBook>('bookshelf_get', { id }, TIMEOUT));
+      (await invokeWithTimeout<ShelfBook>("bookshelf_get", { id }, TIMEOUT));
     return updateBook(
       {
         id,
@@ -330,6 +345,7 @@ export const useBookshelfStore = defineStore('bookshelf', () => {
         groupId: patch.groupId ?? current.groupId,
         bookUrl: patch.bookUrl ?? current.bookUrl,
         fileName: patch.fileName ?? current.fileName,
+        sourceDir: patch.sourceDir ?? current.sourceDir,
         sourceName: patch.sourceName ?? current.sourceName,
         lastChapter: patch.lastChapter ?? current.lastChapter,
         totalChapters: patch.totalChapters ?? current.totalChapters,
@@ -353,7 +369,7 @@ export const useBookshelfStore = defineStore('bookshelf', () => {
   /** 恢复最近一次整本换源 */
   async function restoreSourceSwitch(id: string): Promise<SourceSwitchRestoreResult> {
     const result = await invokeWithTimeout<SourceSwitchRestoreResult>(
-      'bookshelf_restore_source_switch',
+      "bookshelf_restore_source_switch",
       { id },
       TIMEOUT,
     );
@@ -363,29 +379,29 @@ export const useBookshelfStore = defineStore('bookshelf', () => {
 
   /** 缓存单章正文 */
   async function saveContent(id: string, chapterIndex: number, content: string): Promise<void> {
-    await invokeWithTimeout<void>('bookshelf_save_content', { id, chapterIndex, content }, TIMEOUT);
+    await invokeWithTimeout<void>("bookshelf_save_content", { id, chapterIndex, content }, TIMEOUT);
   }
 
   /** 读取缓存正文 */
   async function getContent(id: string, chapterIndex: number): Promise<string | null> {
-    return invokeWithTimeout<string | null>('bookshelf_get_content', { id, chapterIndex }, TIMEOUT);
+    return invokeWithTimeout<string | null>("bookshelf_get_content", { id, chapterIndex }, TIMEOUT);
   }
 
   /** 删除单章正文缓存 */
   async function deleteContent(id: string, chapterIndex: number): Promise<void> {
-    await invokeWithTimeout<void>('bookshelf_delete_content', { id, chapterIndex }, TIMEOUT);
+    await invokeWithTimeout<void>("bookshelf_delete_content", { id, chapterIndex }, TIMEOUT);
   }
 
   /** 获取已缓存正文的章节索引集合 */
   async function getCachedIndices(id: string): Promise<Set<number>> {
-    const list = await invokeWithTimeout<number[]>('bookshelf_get_cached_indices', { id }, TIMEOUT);
+    const list = await invokeWithTimeout<number[]>("bookshelf_get_cached_indices", { id }, TIMEOUT);
     return new Set(list);
   }
 
   /** 获取全书各集播放进度 */
   async function getEpisodeProgress(id: string): Promise<Record<string, EpisodeProgress>> {
     return invokeWithTimeout<Record<string, EpisodeProgress>>(
-      'bookshelf_get_episode_progress',
+      "bookshelf_get_episode_progress",
       { id },
       TIMEOUT,
     );
@@ -399,20 +415,30 @@ export const useBookshelfStore = defineStore('bookshelf', () => {
     duration: number,
   ): Promise<void> {
     await invokeWithTimeout<void>(
-      'bookshelf_save_episode_progress',
+      "bookshelf_save_episode_progress",
       { id, chapterUrl, time, duration },
       TIMEOUT,
     );
   }
 
   /** 判断是否在书架中（同步，基于本地缓存） */
-  function isOnShelf(bookUrl: string, fileName: string): boolean {
-    return shelfIndex.value.has(`${bookUrl}|${fileName}`);
+  function isOnShelf(bookUrl: string, fileName: string, sourceDir?: string): boolean {
+    if (shelfIndex.value.has(shelfIndexKey(bookUrl, fileName, sourceDir))) {
+      return true;
+    }
+    return normalizeSourceDir(sourceDir)
+      ? shelfIndex.value.has(shelfIndexKey(bookUrl, fileName))
+      : false;
   }
 
   /** 获取书架中该书的 ID */
-  function getShelfId(bookUrl: string, fileName: string): string | undefined {
-    return shelfIndex.value.get(`${bookUrl}|${fileName}`);
+  function getShelfId(bookUrl: string, fileName: string, sourceDir?: string): string | undefined {
+    return (
+      shelfIndex.value.get(shelfIndexKey(bookUrl, fileName, sourceDir)) ??
+      (normalizeSourceDir(sourceDir)
+        ? shelfIndex.value.get(shelfIndexKey(bookUrl, fileName))
+        : undefined)
+    );
   }
 
   /** 判断书架中的书是否为隐私书籍 */
@@ -424,7 +450,7 @@ export const useBookshelfStore = defineStore('bookshelf', () => {
   const getBookById = computed(() => (id: string) => books.value.find((b) => b.id === id));
 
   // 监听后台封面下载完成事件，原地更新内存中的 coverUrl，触发 BookCoverImg 重新渲染
-  eventListenSync<{ id: string; localRef: string }>('bookshelf:cover-cached', ({ payload }) => {
+  eventListenSync<{ id: string; localRef: string }>("bookshelf:cover-cached", ({ payload }) => {
     const book = books.value.find((b) => b.id === payload.id);
     if (book) {
       book.coverUrl = payload.localRef;
@@ -432,7 +458,7 @@ export const useBookshelfStore = defineStore('bookshelf', () => {
   });
 
   // TF-40: 监听书架新增/移除事件（来自其他客户端或同一进程的 Web 端），自动刷新列表
-  eventListenSync('bookshelf:changed', () => {
+  eventListenSync("bookshelf:changed", () => {
     void loadBooks();
   });
 
@@ -445,7 +471,7 @@ export const useBookshelfStore = defineStore('bookshelf', () => {
     readScrollRatio: number;
     readPlaybackTime: number;
     lastReadAt: number;
-  }>('bookshelf:progress-updated', ({ payload }) => {
+  }>("bookshelf:progress-updated", ({ payload }) => {
     const book = books.value.find((b) => b.id === payload.id);
     if (book) {
       book.readChapterIndex = payload.readChapterIndex;

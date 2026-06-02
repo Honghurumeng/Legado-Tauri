@@ -3,17 +3,8 @@ import { openUrl } from "@tauri-apps/plugin-opener";
 import { ChevronLeft, ArrowUp } from "lucide-vue-next";
 import { useMessage } from "naive-ui";
 import { ref, computed, watch, onMounted, type CSSProperties } from "vue";
-import type {
-  CachedChapter,
-  BookDetail,
-  ChapterItem,
-  ChapterGroup,
-} from "@/types";
-import {
-  useBookshelfStore,
-  useScriptBridgeStore,
-  groupChapters,
-} from "@/stores";
+import type { CachedChapter, BookDetail, ChapterItem, ChapterGroup } from "@/types";
+import { useBookshelfStore, useScriptBridgeStore, groupChapters } from "@/stores";
 import type { ReaderBookInfo } from "../reader/types";
 import { isMobile } from "../../composables/useEnv";
 import {
@@ -41,6 +32,7 @@ const props = defineProps<{
   show: boolean;
   bookUrl: string;
   fileName: string;
+  sourceDir?: string;
   sourceName: string;
   /** 书源类型：novel（默认）或 comic 或 video */
   sourceType?: string;
@@ -56,6 +48,7 @@ const emit = defineEmits<{
       index: number;
       bookInfo: ReaderBookInfo;
       sourceType: string;
+      sourceDir?: string;
       /** 目录专属 URL（部分书源与 bookUrl 不同） */
       tocUrl?: string;
       /** 视频多线路分组数据（可选） */
@@ -67,10 +60,8 @@ const emit = defineEmits<{
 }>();
 
 const message = useMessage();
-const { runBookInfo, runChapterList, runChapterContent } =
-  useScriptBridgeStore();
-const { addToShelf, saveChapters, saveContent, isOnShelf, ensureLoaded } =
-  useBookshelfStore();
+const { runBookInfo, runChapterList, runChapterContent } = useScriptBridgeStore();
+const { addToShelf, saveChapters, saveContent, isOnShelf, ensureLoaded } = useBookshelfStore();
 
 const loading = ref(false);
 const error = ref("");
@@ -119,35 +110,21 @@ const STORAGE_NAMESPACE = "explore.book-detail";
 
 /** 保存标签和排序状态 */
 function saveTabState() {
-  setFrontendStorageItem(
-    STORAGE_NAMESPACE,
-    storageKey("group"),
-    String(activeGroupIndex.value),
-  );
-  setFrontendStorageItem(
-    STORAGE_NAMESPACE,
-    storageKey("sort"),
-    sortOrder.value,
-  );
+  setFrontendStorageItem(STORAGE_NAMESPACE, storageKey("group"), String(activeGroupIndex.value));
+  setFrontendStorageItem(STORAGE_NAMESPACE, storageKey("sort"), sortOrder.value);
 }
 
 /** 恢复标签和排序状态 */
 function restoreTabState() {
   try {
-    const savedGroup = getFrontendStorageItem(
-      STORAGE_NAMESPACE,
-      storageKey("group"),
-    );
+    const savedGroup = getFrontendStorageItem(STORAGE_NAMESPACE, storageKey("group"));
     if (savedGroup !== null) {
       const idx = Number(savedGroup);
       if (idx >= 0 && idx < chapterGroups.value.length) {
         activeGroupIndex.value = idx;
       }
     }
-    const savedSort = getFrontendStorageItem(
-      STORAGE_NAMESPACE,
-      storageKey("sort"),
-    );
+    const savedSort = getFrontendStorageItem(STORAGE_NAMESPACE, storageKey("sort"));
     if (savedSort === "desc") {
       sortOrder.value = "desc";
     }
@@ -182,12 +159,8 @@ function toggleSortOrder() {
 
 /** 移动端全宽，桌面端固定宽度 */
 const drawerWidth = computed(() => (isMobile.value ? "100vw" : 480));
-const drawerTitle = computed(() =>
-  isMobile.value ? "" : (detail.value?.name ?? "书籍详情"),
-);
-const drawerHeaderStyle = computed(() =>
-  isMobile.value ? { display: "none" } : undefined,
-);
+const drawerTitle = computed(() => (isMobile.value ? "" : (detail.value?.name ?? "书籍详情")));
+const drawerHeaderStyle = computed(() => (isMobile.value ? { display: "none" } : undefined));
 const drawerBodyContentStyle = computed((): CSSProperties | undefined =>
   isMobile.value
     ? {
@@ -205,15 +178,10 @@ const drawerBodyContentStyle = computed((): CSSProperties | undefined =>
       },
 );
 const mobileHeaderTitle = computed(
-  () =>
-    (typeof detail.value?.name === "string"
-      ? detail.value.name.trim()
-      : null) || "书籍详情",
+  () => (typeof detail.value?.name === "string" ? detail.value.name.trim() : null) || "书籍详情",
 );
 const mobileHeaderSubtitle = computed(() => `来自 ${props.sourceName}`);
-const detailBadges = computed(() =>
-  getBookMetaBadges(detail.value, props.sourceType),
-);
+const detailBadges = computed(() => getBookMetaBadges(detail.value, props.sourceType));
 const detailLatestChapter = computed(() => getLatestChapterText(detail.value));
 const detailMetaRows = computed(() => {
   const d = detail.value;
@@ -228,15 +196,10 @@ const detailMetaRows = computed(() => {
   if (wordCount) {
     rows.push({ label: "字数", value: wordCount });
   }
-  if (
-    typeof d.chapterCount === "number" &&
-    Number.isFinite(d.chapterCount) &&
-    d.chapterCount > 0
-  ) {
+  if (typeof d.chapterCount === "number" && Number.isFinite(d.chapterCount) && d.chapterCount > 0) {
     rows.push({ label: "章节总数", value: `${Math.floor(d.chapterCount)} 章` });
   }
-  const updateTime =
-    typeof d.updateTime === "string" ? d.updateTime.trim() : "";
+  const updateTime = typeof d.updateTime === "string" ? d.updateTime.trim() : "";
   if (updateTime) {
     rows.push({ label: "更新时间", value: updateTime });
   }
@@ -246,8 +209,7 @@ const detailMetaRows = computed(() => {
 /** 书源 bookInfo 字段错误摘要（供 UI 提示） */
 const fieldErrorSummary = computed(() =>
   fieldErrors.value.map(
-    (e) =>
-      `${e.field}: 期望 ${e.expected}, 实际 ${e.actual}=${String(e.rawValue).slice(0, 60)}`,
+    (e) => `${e.field}: 期望 ${e.expected}, 实际 ${e.actual}=${String(e.rawValue).slice(0, 60)}`,
   ),
 );
 
@@ -255,10 +217,7 @@ function doCloseDrawer() {
   emit("update:show", false);
 }
 
-const { triggerClose: closeDrawer } = useOverlay(
-  () => props.show,
-  doCloseDrawer,
-);
+const { triggerClose: closeDrawer } = useOverlay(() => props.show, doCloseDrawer);
 
 function updateDrawerShow(value: boolean) {
   if (value) {
@@ -286,20 +245,16 @@ watch(
     chapterWarnings.value = { skipped: 0, messages: [] };
     try {
       await ensureLoaded();
-      onShelf.value = isOnShelf(props.bookUrl, props.fileName);
+      onShelf.value = isOnShelf(props.bookUrl, props.fileName, props.sourceDir);
 
       // 先获取书籍详情，拿到 tocUrl（目录专属 URL），再用它加载章节列表
       // bookInfo 返回的 tocUrl 可能与 bookUrl 不同（如番茄小说使用独立目录接口）
-      const infoRaw = await runBookInfo(props.fileName, props.bookUrl);
-      const sanitized = sanitizeBookDetail(
-        infoRaw,
-        props.fileName,
-        props.bookUrl,
-      );
+      const infoRaw = await runBookInfo(props.fileName, props.bookUrl, props.sourceDir);
+      const sanitized = sanitizeBookDetail(infoRaw, props.fileName, props.bookUrl);
       detail.value = sanitized.data;
       fieldErrors.value = sanitized.fieldErrors;
       const tocUrl = detail.value.tocUrl ?? props.bookUrl;
-      const listRaw = await runChapterList(props.fileName, tocUrl);
+      const listRaw = await runChapterList(props.fileName, tocUrl, undefined, props.sourceDir);
       const chSanitized = sanitizeChapterList(listRaw, props.fileName);
       chapters.value = chSanitized.data;
       chapterWarnings.value = {
@@ -328,9 +283,7 @@ function onClickChapter(ch: ChapterItem, indexInDisplay: number) {
     ? (chapterGroups.value[activeGroupIndex.value]?.chapters ?? [])
     : chapters.value;
   const realIndex =
-    sortOrder.value === "desc"
-      ? currentList.length - 1 - indexInDisplay
-      : indexInDisplay;
+    sortOrder.value === "desc" ? currentList.length - 1 - indexInDisplay : indexInDisplay;
   const bookInfo: ReaderBookInfo = {
     name: d?.name ?? "",
     author: d?.author ?? "",
@@ -340,6 +293,7 @@ function onClickChapter(ch: ChapterItem, indexInDisplay: number) {
     bookUrl: props.bookUrl,
     sourceName: props.sourceName,
     fileName: props.fileName,
+    sourceDir: props.sourceDir,
     lastChapter: getNormalizedLastChapter(d),
     latestChapter: d?.latestChapter,
     latestChapterUrl: d?.latestChapterUrl,
@@ -355,6 +309,7 @@ function onClickChapter(ch: ChapterItem, indexInDisplay: number) {
     index: realIndex,
     bookInfo,
     sourceType: props.sourceType ?? "novel",
+    sourceDir: props.sourceDir,
     tocUrl: detail.value?.tocUrl ?? props.bookUrl,
     chapterGroups: hasGroups.value ? chapterGroups.value : undefined,
     activeGroupIndex: hasGroups.value ? activeGroupIndex.value : undefined,
@@ -376,6 +331,7 @@ async function handleAddToShelf() {
         intro: d.intro,
         kind: d.kind,
         bookUrl: props.bookUrl,
+        sourceDir: props.sourceDir,
         lastChapter: getNormalizedLastChapter(d),
         sourceType: props.sourceType ?? "novel",
       },
@@ -405,7 +361,7 @@ async function handleAddToShelf() {
       const shelfId = result.id;
       (async () => {
         try {
-          const content = await runChapterContent(props.fileName, firstCh.url);
+          const content = await runChapterContent(props.fileName, firstCh.url, props.sourceDir);
           await saveContent(
             shelfId,
             0,
@@ -417,9 +373,7 @@ async function handleAddToShelf() {
       })();
     }
   } catch (e: unknown) {
-    message.error(
-      `加入书架失败: ${e instanceof Error ? e.message : String(e)}`,
-    );
+    message.error(`加入书架失败: ${e instanceof Error ? e.message : String(e)}`);
   } finally {
     addingToShelf.value = false;
   }
@@ -466,12 +420,7 @@ async function handleAddToShelf() {
         <n-spin :show="loading" class="bd-spin-wrap">
           <div class="bd-scroll" :class="{ 'bd-scroll--mobile': isMobile }">
             <!-- 错误 -->
-            <n-alert
-              v-if="error"
-              type="error"
-              :title="error"
-              style="margin-bottom: 16px"
-            />
+            <n-alert v-if="error" type="error" :title="error" style="margin-bottom: 16px" />
 
             <!-- 书源数据字段异常警告（非必需字段类型错误，已自动修复，仅提示） -->
             <n-alert
@@ -517,23 +466,14 @@ async function handleAddToShelf() {
                   </n-tag>
                 </div>
                 <div v-if="detailMetaRows.length" class="bd-header__meta-grid">
-                  <div
-                    v-for="row in detailMetaRows"
-                    :key="row.label"
-                    class="bd-header__meta-cell"
-                  >
+                  <div v-for="row in detailMetaRows" :key="row.label" class="bd-header__meta-cell">
                     <span class="bd-header__meta-label">{{ row.label }}</span>
-                    <span class="bd-header__meta-value" :title="row.value">{{
-                      row.value
-                    }}</span>
+                    <span class="bd-header__meta-value" :title="row.value">{{ row.value }}</span>
                   </div>
                 </div>
-                <a
-                  class="bd-header__url"
-                  :title="bookUrl"
-                  @click.prevent="openUrl(bookUrl)"
-                  >{{ bookUrl }}</a
-                >
+                <a class="bd-header__url" :title="bookUrl" @click.prevent="openUrl(bookUrl)">{{
+                  bookUrl
+                }}</a>
               </div>
               <p
                 v-if="detail.intro"
@@ -564,26 +504,17 @@ async function handleAddToShelf() {
                   </n-tag>
                 </div>
                 <div v-if="detailMetaRows.length" class="bd-header__meta-grid">
-                  <div
-                    v-for="row in detailMetaRows"
-                    :key="row.label"
-                    class="bd-header__meta-cell"
-                  >
+                  <div v-for="row in detailMetaRows" :key="row.label" class="bd-header__meta-cell">
                     <span class="bd-header__meta-label">{{ row.label }}</span>
-                    <span class="bd-header__meta-value" :title="row.value">{{
-                      row.value
-                    }}</span>
+                    <span class="bd-header__meta-value" :title="row.value">{{ row.value }}</span>
                   </div>
                 </div>
                 <p v-if="detail.intro" class="bd-header__intro app-scrollbar">
                   {{ detail.intro }}
                 </p>
-                <a
-                  class="bd-header__url"
-                  :title="bookUrl"
-                  @click.prevent="openUrl(bookUrl)"
-                  >{{ bookUrl }}</a
-                >
+                <a class="bd-header__url" :title="bookUrl" @click.prevent="openUrl(bookUrl)">{{
+                  bookUrl
+                }}</a>
               </div>
             </div>
 
@@ -595,10 +526,7 @@ async function handleAddToShelf() {
                   size="lg"
                   block
                   :disabled="!displayChapters.length"
-                  @click="
-                    displayChapters.length &&
-                    onClickChapter(displayChapters[0], 0)
-                  "
+                  @click="displayChapters.length && onClickChapter(displayChapters[0], 0)"
                 >
                   开始阅读
                 </AppButton>
@@ -624,18 +552,12 @@ async function handleAddToShelf() {
                   {{ hasGroups ? "选集" : "章节列表" }}
                   ({{ displayChapters.length }})
                 </div>
-                <n-button
-                  text
-                  size="tiny"
-                  class="bd-chapters__sort-btn"
-                  @click="toggleSortOrder"
-                >
+                <n-button text size="tiny" class="bd-chapters__sort-btn" @click="toggleSortOrder">
                   {{ sortOrder === "asc" ? "正序" : "倒序" }}
                   <ArrowUp
                     :size="12"
                     :style="{
-                      transform:
-                        sortOrder === 'desc' ? 'rotate(180deg)' : 'none',
+                      transform: sortOrder === 'desc' ? 'rotate(180deg)' : 'none',
                       transition: 'transform 0.2s',
                     }"
                   />
@@ -675,11 +597,7 @@ async function handleAddToShelf() {
                   }}</span>
                   <span class="bd-chapter-item__name">{{ ch.name }}</span>
                   <span v-if="isVipChapter(ch)" class="bd-chapter-item__vip">
-                    VIP{{
-                      getChapterPriceLabel(ch)
-                        ? ` ${getChapterPriceLabel(ch)}`
-                        : ""
-                    }}
+                    VIP{{ getChapterPriceLabel(ch) ? ` ${getChapterPriceLabel(ch)}` : "" }}
                   </span>
                 </div>
               </div>
@@ -742,8 +660,7 @@ async function handleAddToShelf() {
   align-items: center;
   gap: 10px;
   min-height: 60px;
-  padding: max(var(--safe-area-inset-top, env(safe-area-inset-top, 0px)), 16px)
-    14px 8px 8px;
+  padding: max(var(--safe-area-inset-top, env(safe-area-inset-top, 0px)), 16px) 14px 8px 8px;
   border-bottom: 1px solid var(--color-border);
   background: var(--color-surface-raised);
   box-shadow: 0 4px 14px rgba(0, 0, 0, 0.08);

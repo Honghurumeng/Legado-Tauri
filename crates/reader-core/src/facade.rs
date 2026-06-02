@@ -271,12 +271,13 @@ impl ReaderCore {
     pub async fn eval_source_capabilities(
         &self,
         file_name: &str,
+        source_dir: Option<&str>,
     ) -> Result<String, ReaderCoreError> {
-        if self.is_legado_file(file_name, None) {
+        if self.is_legado_file(file_name, source_dir) {
             let source = self.require_legado_source(file_name).await?;
             return Ok(legado_capabilities(&source).join(","));
         }
-        let content = self.read_source(file_name, None).await?;
+        let content = self.read_source(file_name, source_dir).await?;
         Ok(js_capabilities(&content).join(","))
     }
 
@@ -421,7 +422,22 @@ impl ReaderCore {
         source_name: &str,
     ) -> Result<ShelfBook, ReaderCoreError> {
         let mut books = self.read_shelf_books().await?;
-        let id = shelf_id(&book.book_url, file_name);
+        let source_dir = clean_optional_string(book.source_dir.clone());
+        let exact_id = shelf_id(&book.book_url, file_name, source_dir.as_deref());
+        let legacy_id = shelf_id(&book.book_url, file_name, None);
+        let id = if exact_id != legacy_id && !books.contains_key(&exact_id) {
+            match books.get(&legacy_id) {
+                Some(item)
+                    if item.source_dir.as_deref().unwrap_or_default().is_empty()
+                        || item.source_dir.as_deref() == source_dir.as_deref() =>
+                {
+                    legacy_id
+                }
+                _ => exact_id,
+            }
+        } else {
+            exact_id
+        };
         let now = now_ms();
         let item = books.entry(id.clone()).or_insert_with(|| ShelfBook {
             id: id.clone(),
@@ -434,6 +450,7 @@ impl ReaderCore {
             group_id: book.group_id.clone(),
             book_url: book.book_url.clone(),
             file_name: file_name.to_string(),
+            source_dir: source_dir.clone(),
             source_name: source_name.to_string(),
             last_chapter: book.last_chapter.clone(),
             added_at: now,
@@ -459,6 +476,9 @@ impl ReaderCore {
         item.group_id = book.group_id;
         item.last_chapter = book.last_chapter;
         item.source_type = book.source_type.unwrap_or_else(|| item.source_type.clone());
+        if source_dir.is_some() {
+            item.source_dir = source_dir;
+        }
         item.last_read_at = now;
         let result = item.clone();
         self.write_shelf_books(&books).await?;
@@ -532,6 +552,9 @@ impl ReaderCore {
     ) -> Result<ShelfBook, ReaderCoreError> {
         let mut books = self.read_shelf_books().await?;
         let now = now_ms();
+        let previous = books.get(&book.id).cloned();
+        let source_dir = clean_optional_string(book.source_dir)
+            .or_else(|| previous.as_ref().and_then(|item| item.source_dir.clone()));
         let item = ShelfBook {
             id: book.id.clone(),
             name: book.name,
@@ -543,6 +566,7 @@ impl ReaderCore {
             group_id: book.group_id,
             book_url: book.book_url,
             file_name: book.file_name,
+            source_dir,
             source_name: book.source_name,
             last_chapter: book.last_chapter,
             added_at: book.added_at.unwrap_or(now),
@@ -1135,8 +1159,9 @@ impl BookSourceMeta {
             .as_deref()
             .map(split_tags)
             .unwrap_or_default();
+        let source_key = format!("{source_dir}::{file_name}");
         Self {
-            source_key: file_name.clone(),
+            source_key,
             uuid: md5_hex(&source.book_source_url),
             file_name,
             name: source.book_source_name.clone(),
@@ -1197,8 +1222,9 @@ impl BookSourceMeta {
             .map(|value| value != "false" && value != "0")
             .unwrap_or(true);
         let capabilities = js_capabilities(content);
+        let source_key = format!("{source_dir}::{file_name}");
         Self {
-            source_key: file_name.clone(),
+            source_key,
             uuid: md5_hex(&format!("{source_dir}/{file_name}")),
             file_name,
             name,
@@ -1444,8 +1470,18 @@ fn safe_storage_name(value: &str) -> String {
     md5_hex(value)
 }
 
-fn shelf_id(book_url: &str, file_name: &str) -> String {
-    md5_hex(&format!("{book_url}|{file_name}"))
+fn shelf_id(book_url: &str, file_name: &str, source_dir: Option<&str>) -> String {
+    let source_dir = source_dir.map(str::trim).filter(|value| !value.is_empty());
+    match source_dir {
+        Some(source_dir) => md5_hex(&format!("{book_url}|{file_name}|{source_dir}")),
+        None => md5_hex(&format!("{book_url}|{file_name}")),
+    }
+}
+
+fn clean_optional_string(value: Option<String>) -> Option<String> {
+    value
+        .map(|value| value.trim().to_string())
+        .filter(|value| !value.is_empty())
 }
 
 fn content_cache_book_key(file_name: &str, chapter_url: &str) -> String {

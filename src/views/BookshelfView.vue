@@ -12,10 +12,7 @@ import { useOverlay } from "@/composables/useOverlay";
 import { useShelfGroups } from "@/composables/useShelfGroups";
 import { useTocAutoUpdate } from "@/composables/useTocAutoUpdate";
 import { isTransportAvailable } from "@/composables/useTransport";
-import {
-  useViewCardDensity,
-  type CardSizeKey,
-} from "@/composables/useViewCardDensity";
+import { useViewCardDensity, type CardSizeKey } from "@/composables/useViewCardDensity";
 import BookshelfContextMenu from "@/features/bookshelf/components/BookshelfContextMenu.vue";
 import BookshelfDialogs from "@/features/bookshelf/components/BookshelfDialogs.vue";
 import BookshelfDiscoveryRecommend from "@/features/bookshelf/components/BookshelfDiscoveryRecommend.vue";
@@ -44,8 +41,7 @@ const frontendPluginsStore = useFrontendPluginsStore();
 const privacyModeStore = usePrivacyModeStore();
 const scriptBridgeStore = useScriptBridgeStore();
 
-const { books, loading, tocRefreshingBookIds, tocRefreshingCount } =
-  storeToRefs(bookshelfStore);
+const { books, loading, tocRefreshingBookIds, tocRefreshingCount } = storeToRefs(bookshelfStore);
 const { sources: bookSources } = storeToRefs(bookSourceStore);
 const {
   searchKw,
@@ -69,6 +65,7 @@ const { menuOptions } = storeToRefs(uiStore);
 const {
   showReader,
   readerFileName,
+  readerSourceDir,
   readerChapterUrl,
   readerChapterName,
   readerChapters,
@@ -219,23 +216,18 @@ const { activeView } = storeToRefs(navigationStore);
 const readerLauncher = useBookshelfReaderLauncher(message);
 const bookshelfActions = useBookshelfActions(message);
 const tocAutoUpdate = useTocAutoUpdate();
-const recommendationRef = ref<InstanceType<
-  typeof BookshelfDiscoveryRecommend
-> | null>(null);
+const recommendationRef = ref<InstanceType<typeof BookshelfDiscoveryRecommend> | null>(null);
 const bookshelfShelfOrder = ref(0);
 const bookshelfShowShelfTitle = ref(true);
 const bookshelfShelfTitle = ref("我的书架");
 const { runChapterList, cancelTask } = scriptBridgeStore;
-const {
-  getShelfId,
-  ensureLoaded: ensureShelfLoaded,
-  isPrivateShelfBook,
-} = bookshelfStore;
+const { getShelfId, ensureLoaded: ensureShelfLoaded, isPrivateShelfBook } = bookshelfStore;
 
 const {
   showDrawer: showRecommendDetail,
   drawerBookUrl: recommendDrawerBookUrl,
   drawerFileName: recommendDrawerFileName,
+  drawerSourceDir: recommendDrawerSourceDir,
   drawerSourceName: recommendDrawerSourceName,
   drawerSourceType: recommendDrawerSourceType,
   openDetail: openRecommendDetail,
@@ -249,6 +241,7 @@ const {
   readerChapterUrl: recommendReaderChapterUrl,
   readerChapterName: recommendReaderChapterName,
   readerFileName: recommendReaderFileName,
+  readerSourceDir: recommendReaderSourceDir,
   readerChapters: recommendReaderChapters,
   readerCurrentIndex: recommendReaderCurrentIndex,
   readerBookInfo: recommendReaderBookInfo,
@@ -265,6 +258,7 @@ const {
   privacyExitTick,
   runChapterList,
   cancelTask,
+  drawerSourceDir: recommendDrawerSourceDir,
   ensureShelfLoaded,
   getShelfId,
   isPrivateShelfBook,
@@ -279,10 +273,7 @@ function updateBookshelfShelfOrder(order: number) {
   bookshelfShelfOrder.value = order;
 }
 
-function updateBookshelfShelfConfig(config: {
-  showTitle: boolean;
-  title: string;
-}) {
+function updateBookshelfShelfConfig(config: { showTitle: boolean; title: string }) {
   bookshelfShowShelfTitle.value = config.showTitle;
   bookshelfShelfTitle.value = config.title;
 }
@@ -349,9 +340,7 @@ const searchedBooks = computed(() => {
     return sortedBooks.value;
   }
   return sortedBooks.value.filter(
-    (book) =>
-      book.name.toLowerCase().includes(kw) ||
-      book.author.toLowerCase().includes(kw),
+    (book) => book.name.toLowerCase().includes(kw) || book.author.toLowerCase().includes(kw),
   );
 });
 
@@ -422,14 +411,9 @@ onMounted(async () => {
   }
   loading.value = true;
   try {
-    await Promise.all([
-      bookshelfStore.loadBooks(),
-      frontendPluginsStore.ensureInitialized(),
-    ]);
+    await Promise.all([bookshelfStore.loadBooks(), frontendPluginsStore.ensureInitialized()]);
   } catch (error: unknown) {
-    message.error(
-      `加载书架失败: ${error instanceof Error ? error.message : String(error)}`,
-    );
+    message.error(`加载书架失败: ${error instanceof Error ? error.message : String(error)}`);
   } finally {
     loading.value = false;
   }
@@ -475,9 +459,7 @@ onMounted(async () => {
       :shelf-order="bookshelfShelfOrder"
       :show-shelf-title="bookshelfShowShelfTitle"
       :shelf-title="bookshelfShelfTitle"
-      @select="
-        editMode ? toggleBookSelect($event.id) : readerLauncher.openBook($event)
-      "
+      @select="editMode ? toggleBookSelect($event.id) : readerLauncher.openBook($event)"
       @contextmenu="(book, e) => !editMode && uiStore.openContextMenu(book, e)"
       @refresh="handleRefresh"
     >
@@ -495,9 +477,7 @@ onMounted(async () => {
     <!-- 编辑模式底部操作栏 -->
     <Transition name="bs-edit-bar">
       <div v-if="editMode" class="bs-edit-bar">
-        <span class="bs-edit-bar__count"
-          >已选 {{ selectedBookIds.size }} 本</span
-        >
+        <span class="bs-edit-bar__count">已选 {{ selectedBookIds.size }} 本</span>
         <div class="bs-edit-bar__actions">
           <button class="bs-edit-bar__btn" @click="toggleSelectAll">
             {{ allSelected ? "取消全选" : "全选" }}
@@ -524,24 +504,15 @@ onMounted(async () => {
       @update:show="onSearchModalUpdateShow"
       @after-leave="searchPopupKw = ''"
     >
-      <n-input
-        v-model:value="searchPopupKw"
-        placeholder="搜索书名或作者..."
-        clearable
-        autofocus
-      />
+      <n-input v-model:value="searchPopupKw" placeholder="搜索书名或作者..." clearable autofocus />
       <div class="bs-search-results">
         <template v-if="searchPopupKw.trim()">
           <div
             v-for="book in sortedBooks
               .filter(
                 (b) =>
-                  b.name
-                    .toLowerCase()
-                    .includes(searchPopupKw.trim().toLowerCase()) ||
-                  b.author
-                    .toLowerCase()
-                    .includes(searchPopupKw.trim().toLowerCase()),
+                  b.name.toLowerCase().includes(searchPopupKw.trim().toLowerCase()) ||
+                  b.author.toLowerCase().includes(searchPopupKw.trim().toLowerCase()),
               )
               .slice(0, 30)"
             :key="book.id"
@@ -551,23 +522,15 @@ onMounted(async () => {
             @click="openSearchResult(book)"
             @keydown.enter.prevent="openSearchResult(book)"
           >
-            <span class="bs-search-item__name">{{
-              book.name || "未知书名"
-            }}</span>
-            <span class="bs-search-item__author">{{
-              book.author || "佚名"
-            }}</span>
+            <span class="bs-search-item__name">{{ book.name || "未知书名" }}</span>
+            <span class="bs-search-item__author">{{ book.author || "佚名" }}</span>
           </div>
           <div
             v-if="
               !sortedBooks.filter(
                 (b) =>
-                  b.name
-                    .toLowerCase()
-                    .includes(searchPopupKw.trim().toLowerCase()) ||
-                  b.author
-                    .toLowerCase()
-                    .includes(searchPopupKw.trim().toLowerCase()),
+                  b.name.toLowerCase().includes(searchPopupKw.trim().toLowerCase()) ||
+                  b.author.toLowerCase().includes(searchPopupKw.trim().toLowerCase()),
               ).length
             "
             class="bs-search-empty"
@@ -607,6 +570,7 @@ onMounted(async () => {
       v-model:show="showRecommendDetail"
       :book-url="recommendDrawerBookUrl"
       :file-name="recommendDrawerFileName"
+      :source-dir="recommendDrawerSourceDir"
       :source-name="recommendDrawerSourceName"
       :source-type="recommendDrawerSourceType"
       @read-chapter="onRecommendReadChapter"
@@ -618,6 +582,7 @@ onMounted(async () => {
       :chapter-url="recommendReaderChapterUrl"
       :chapter-name="recommendReaderChapterName"
       :file-name="recommendReaderFileName"
+      :source-dir="recommendReaderSourceDir"
       :chapters="recommendReaderChapters"
       :shelf-book-id="recommendReaderShelfId"
       :book-info="recommendReaderBookInfo"
@@ -634,13 +599,12 @@ onMounted(async () => {
       :chapter-url="readerChapterUrl"
       :chapter-name="readerChapterName"
       :file-name="readerFileName"
+      :source-dir="readerSourceDir"
       :chapters="readerChapters"
       :chapter-groups="readerChapterGroups"
       :inline-group-tabs="true"
       :episode-progress="episodeProgressMap"
-      :save-episode-progress="
-        (_, url, t, d) => readerStore.setEpisodeProgress(url, t, d)
-      "
+      :save-episode-progress="(_, url, t, d) => readerStore.setEpisodeProgress(url, t, d)"
       :shelf-book-id="readerShelfId"
       :book-info="readerBookInfo"
       :source-type="readerSourceType"

@@ -56,12 +56,14 @@ async function refreshBookToc(
 ): Promise<number> {
   bookshelfStore.beginTocRefresh(book.id);
   try {
-    const info = await scriptBridgeStore.runBookInfo(
-      book.fileName,
-      book.bookUrl,
-    );
+    const info = await scriptBridgeStore.runBookInfo(book.fileName, book.bookUrl, book.sourceDir);
     const tocUrl = (info as { tocUrl?: string }).tocUrl ?? book.bookUrl;
-    const raw = await scriptBridgeStore.runChapterList(book.fileName, tocUrl);
+    const raw = await scriptBridgeStore.runChapterList(
+      book.fileName,
+      tocUrl,
+      undefined,
+      book.sourceDir,
+    );
     const fetched = (raw as RawChapterItem[]).map((chapter, index) => ({
       index,
       name: chapter.name,
@@ -101,17 +103,13 @@ export function useTocAutoUpdate() {
   const bookshelfStore = useBookshelfStore();
   const scriptBridgeStore = useScriptBridgeStore();
 
-  function isAutoUpdateEnabled(
-    trigger: "onBookOpen" | "onAppStart" | "onShelfView",
-  ): boolean {
+  function isAutoUpdateEnabled(trigger: "onBookOpen" | "onAppStart" | "onShelfView"): boolean {
     const cfg = preferencesStore.tocAutoUpdate;
     return cfg.enabled && cfg[trigger];
   }
 
   function canRefreshBook(book: ShelfBook): boolean {
-    return (
-      !!book.fileName && !!book.bookUrl && book.fileName !== LOCAL_TXT_FILE_NAME
-    );
+    return !!book.fileName && !!book.bookUrl && book.fileName !== LOCAL_TXT_FILE_NAME;
   }
 
   /** 检查某本书是否需要更新（根据最小间隔时间限制） */
@@ -164,9 +162,7 @@ export function useTocAutoUpdate() {
    * 仅在设置 enabled + onShelfView 开启，且单本书距离上次超过最小间隔时才执行。
    * @returns 刷新结果摘要 { success: 成功数, failed: 失败数, updated: 新增章节总数 }
    */
-  async function refreshAllOnShelfView(
-    options: RefreshAllTocOptions = {},
-  ): Promise<{
+  async function refreshAllOnShelfView(options: RefreshAllTocOptions = {}): Promise<{
     success: number;
     failed: number;
     updated: number;
@@ -190,11 +186,7 @@ export function useTocAutoUpdate() {
           continue;
         }
       }
-      const count = await refreshBookToc(
-        book,
-        bookshelfStore,
-        scriptBridgeStore,
-      );
+      const count = await refreshBookToc(book, bookshelfStore, scriptBridgeStore);
       if (count >= 0) {
         result.success++;
         result.updated += count;

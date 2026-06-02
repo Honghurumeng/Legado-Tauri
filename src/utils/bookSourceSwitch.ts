@@ -42,6 +42,7 @@ export interface SwitchableBookMeta {
 export interface SourceCandidate {
   key: string;
   fileName: string;
+  sourceDir?: string;
   sourceName: string;
   sourceLogo?: string;
   book: BookItem;
@@ -90,10 +91,7 @@ function stripNoise(value: string): string {
     .replace(/\([^)]*\)/g, "")
     .replace(/【[^】]*】/g, "")
     .replace(/广告|求收藏|求订阅|最新网址|手机版|手机用户请到|ps[:：].*/g, "")
-    .replace(
-      /[\s`~!@#$%^&*()_\-+=|\\:;"'<>,.?/，。！？、：；（）【】《》“”‘’]/g,
-      "",
-    );
+    .replace(/[\s`~!@#$%^&*()_\-+=|\\:;"'<>,.?/，。！？、：；（）【】《》“”‘’]/g, "");
 }
 
 function toBigramSet(value: string): Set<string> {
@@ -163,9 +161,7 @@ function parseChineseNumber(raw: string): number | null {
 }
 
 function extractChapterNumber(name: string): number | null {
-  const direct = name.match(
-    /第\s*([0-9零一二两三四五六七八九十百千]+)\s*[章节话卷集]/i,
-  );
+  const direct = name.match(/第\s*([0-9零一二两三四五六七八九十百千]+)\s*[章节话卷集]/i);
   if (direct) {
     return parseChineseNumber(direct[1]);
   }
@@ -187,9 +183,7 @@ function basenameSignature(url: string): string {
   }
 }
 
-export function buildCurrentBookMeta(
-  book: ShelfBook | ReaderBookInfo,
-): SwitchableBookMeta {
+export function buildCurrentBookMeta(book: ShelfBook | ReaderBookInfo): SwitchableBookMeta {
   return {
     name: book.name,
     author: book.author,
@@ -210,12 +204,8 @@ export function buildCandidateBookMeta(
   detail?: BookDetail | null,
 ): SwitchableBookMeta {
   return {
-    name:
-      (typeof detail?.name === "string" ? detail.name.trim() : null) ??
-      book.name,
-    author:
-      (typeof detail?.author === "string" ? detail.author.trim() : null) ??
-      book.author,
+    name: (typeof detail?.name === "string" ? detail.name.trim() : null) ?? book.name,
+    author: (typeof detail?.author === "string" ? detail.author.trim() : null) ?? book.author,
     coverUrl: detail?.coverUrl ?? book.coverUrl,
     intro: detail?.intro ?? book.intro,
     kind: detail?.kind ?? book.kind,
@@ -223,16 +213,12 @@ export function buildCandidateBookMeta(
     wordCount: detail?.wordCount ?? book.wordCount,
     chapterCount: detail?.chapterCount ?? book.chapterCount,
     updateTime: detail?.updateTime ?? book.updateTime,
-    lastChapter:
-      getNormalizedLastChapter(detail) ?? getNormalizedLastChapter(book),
+    lastChapter: getNormalizedLastChapter(detail) ?? getNormalizedLastChapter(book),
     bookUrl: book.bookUrl,
   };
 }
 
-export function getMetadataValue(
-  book: SwitchableBookMeta,
-  key: MetadataFieldKey,
-): string {
+export function getMetadataValue(book: SwitchableBookMeta, key: MetadataFieldKey): string {
   if (key === "coverUrl") {
     return getCoverImageUrl(book.coverUrl) ?? "";
   }
@@ -243,17 +229,11 @@ export function getMetadataValue(
   return typeof value === "string" ? value.trim() : "";
 }
 
-function buildSingleSegment(
-  text: string,
-  kind: DiffSegment["kind"],
-): DiffSegment[] {
+function buildSingleSegment(text: string, kind: DiffSegment["kind"]): DiffSegment[] {
   return text ? [{ text, kind }] : [];
 }
 
-export function buildDiffPair(
-  currentValue: string,
-  candidateValue: string,
-): DiffPair {
+export function buildDiffPair(currentValue: string, candidateValue: string): DiffPair {
   if (currentValue === candidateValue) {
     return {
       current: buildSingleSegment(currentValue, "same"),
@@ -284,19 +264,11 @@ export function buildDiffPair(
   }
 
   const currentPrefix = currentChars.slice(0, prefix).join("");
-  const currentMiddle = currentChars
-    .slice(prefix, currentChars.length - suffix)
-    .join("");
-  const currentSuffix = currentChars
-    .slice(currentChars.length - suffix)
-    .join("");
+  const currentMiddle = currentChars.slice(prefix, currentChars.length - suffix).join("");
+  const currentSuffix = currentChars.slice(currentChars.length - suffix).join("");
   const candidatePrefix = candidateChars.slice(0, prefix).join("");
-  const candidateMiddle = candidateChars
-    .slice(prefix, candidateChars.length - suffix)
-    .join("");
-  const candidateSuffix = candidateChars
-    .slice(candidateChars.length - suffix)
-    .join("");
+  const candidateMiddle = candidateChars.slice(prefix, candidateChars.length - suffix).join("");
+  const candidateSuffix = candidateChars.slice(candidateChars.length - suffix).join("");
 
   return {
     current: [
@@ -357,10 +329,7 @@ export function scoreBookCandidate(
 
   const baseTitle = stripNoise(base.name);
   const candidateTitle = stripNoise(book.name);
-  const titleSimilarity = jaccard(
-    toBigramSet(base.name),
-    toBigramSet(book.name),
-  );
+  const titleSimilarity = jaccard(toBigramSet(base.name), toBigramSet(book.name));
   if (baseTitle && candidateTitle && baseTitle === candidateTitle) {
     score += 60;
     reasons.push("书名完全一致");
@@ -403,14 +372,16 @@ export function rankBookCandidates(
   fileName: string,
   book: BookItem,
   sourceLogo?: string,
+  sourceDir?: string,
 ): SourceCandidate | null {
   const { score, reasons } = scoreBookCandidate(base, book);
   if (score < 28) {
     return null;
   }
   return {
-    key: `${fileName}|${book.bookUrl}`,
+    key: `${sourceDir ?? ""}|${fileName}|${book.bookUrl}`,
     fileName,
+    sourceDir,
     sourceName,
     sourceLogo,
     book,
@@ -440,10 +411,7 @@ export function rankChapterMatches(
       const reasons: string[] = [];
       let score = 0;
       const chapterName = stripNoise(chapter.name);
-      const titleSimilarity = jaccard(
-        toBigramSet(current.name),
-        toBigramSet(chapter.name),
-      );
+      const titleSimilarity = jaccard(toBigramSet(current.name), toBigramSet(chapter.name));
 
       if (currentName && chapterName && currentName === chapterName) {
         score += 70;
@@ -454,11 +422,7 @@ export function rankChapterMatches(
       }
 
       const chapterNumber = extractChapterNumber(chapter.name);
-      if (
-        currentNumber !== null &&
-        chapterNumber !== null &&
-        currentNumber === chapterNumber
-      ) {
+      if (currentNumber !== null && chapterNumber !== null && currentNumber === chapterNumber) {
         score += 30;
         reasons.push(`章节序号一致（${chapterNumber}）`);
       }

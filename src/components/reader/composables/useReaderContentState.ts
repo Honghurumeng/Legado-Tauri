@@ -48,12 +48,11 @@ interface ReaderContentPayload {
 
 interface UseReaderContentStateOptions {
   fileName: ValueSource<string>;
+  sourceDir?: ValueSource<string | undefined>;
   sourceType: ValueSource<string | undefined>;
   currentShelfId: ComputedRef<string | undefined>;
   activeChapterIndex: Ref<number>;
-  temporaryChapterOverrides: Ref<
-    Record<number, TemporaryChapterSourceOverride>
-  >;
+  temporaryChapterOverrides: Ref<Record<number, TemporaryChapterSourceOverride>>;
   readIndices: Ref<Set<number>>;
   cachedIndices: Ref<Set<number>>;
   hasPrev: ComputedRef<boolean>;
@@ -61,22 +60,15 @@ interface UseReaderContentStateOptions {
   measureHostRef: Ref<HTMLElement | null>;
   backgroundMeasureHostRef: Ref<HTMLElement | null>;
   settings: ReaderSettingsLike;
-  runChapterContent: (fileName: string, chapterUrl: string) => Promise<unknown>;
-  getSourceCapabilities: (fileName: string) => Promise<Set<string>>;
+  runChapterContent: (fileName: string, chapterUrl: string, sourceDir?: string) => Promise<unknown>;
+  getSourceCapabilities: (fileName: string, sourceDir?: string) => Promise<Set<string>>;
   runChapterParagraphCommentCounts: (
     fileName: string,
     chapterUrl: string,
     context: ParagraphCommentContext,
   ) => Promise<unknown>;
-  getContent: (
-    shelfId: string,
-    index: number,
-  ) => Promise<string | null | undefined>;
-  saveContent: (
-    shelfId: string,
-    index: number,
-    content: string,
-  ) => Promise<unknown>;
+  getContent: (shelfId: string, index: number) => Promise<string | null | undefined>;
+  saveContent: (shelfId: string, index: number, content: string) => Promise<unknown>;
   getCachedIndices: (shelfId: string) => Promise<Set<number>>;
   getChapter: (index: number) => ChapterItem | undefined;
   buildReaderContentPayload: (
@@ -105,14 +97,9 @@ export function useReaderContentState(options: UseReaderContentStateOptions) {
     processedChapterTextCache,
     processedChapterTextRequests,
   } = runtimeTextCache;
-  const paragraphCommentSummariesByIndex = ref<
-    Record<number, ParagraphCommentSummary[]>
-  >({});
+  const paragraphCommentSummariesByIndex = ref<Record<number, ParagraphCommentSummary[]>>({});
   const paragraphCommentCacheKeyByIndex = new Map<number, string>();
-  const paragraphCommentRequests = new Map<
-    string,
-    Promise<ParagraphCommentSummary[]>
-  >();
+  const paragraphCommentRequests = new Map<string, Promise<ParagraphCommentSummary[]>>();
 
   async function loadShelfStatus() {
     if (!options.currentShelfId.value) {
@@ -120,18 +107,13 @@ export function useReaderContentState(options: UseReaderContentStateOptions) {
     }
 
     try {
-      options.cachedIndices.value = await options.getCachedIndices(
-        options.currentShelfId.value,
-      );
+      options.cachedIndices.value = await options.getCachedIndices(options.currentShelfId.value);
     } catch {
       options.cachedIndices.value = new Set();
     }
 
     const nextRead = new Set<number>();
-    const readUpTo =
-      options.activeChapterIndex.value >= 0
-        ? options.activeChapterIndex.value
-        : -1;
+    const readUpTo = options.activeChapterIndex.value >= 0 ? options.activeChapterIndex.value : -1;
     for (let index = 0; index <= readUpTo; index++) {
       nextRead.add(index);
     }
@@ -142,10 +124,7 @@ export function useReaderContentState(options: UseReaderContentStateOptions) {
     options.readIndices.value.add(index);
   }
 
-  async function fetchRawChapterText(
-    index: number,
-    forceNetwork = false,
-  ): Promise<string> {
+  async function fetchRawChapterText(index: number, forceNetwork = false): Promise<string> {
     const chapter = options.getChapter(index);
     if (!chapter) {
       return "";
@@ -176,6 +155,7 @@ export function useReaderContentState(options: UseReaderContentStateOptions) {
         const raw = await options.runChapterContent(
           chapterOverride.fileName,
           chapterOverride.chapterUrl,
+          chapterOverride.sourceDir,
         );
         text = typeof raw === "string" ? raw : String(raw ?? "");
       }
@@ -183,10 +163,7 @@ export function useReaderContentState(options: UseReaderContentStateOptions) {
       // 视频类型跳过磁盘缓存读取：m3u8 URL 有时效性，不能复用
       if (!text && !forceNetwork && !isVideo && options.currentShelfId.value) {
         try {
-          const shelfText = await options.getContent(
-            options.currentShelfId.value,
-            index,
-          );
+          const shelfText = await options.getContent(options.currentShelfId.value, index);
           text = typeof shelfText === "string" ? shelfText : null;
           if (readSource(options.sourceType) === "comic" && text === "comic") {
             text = null;
@@ -204,13 +181,12 @@ export function useReaderContentState(options: UseReaderContentStateOptions) {
         const raw = await options.runChapterContent(
           currentFileName,
           chapter.url,
+          options.sourceDir ? readSource(options.sourceDir) : undefined,
         );
         text = typeof raw === "string" ? raw : String(raw ?? "");
         // 视频类型不写入磁盘缓存：m3u8 URL 有时效性
         if (!isVideo && options.currentShelfId.value && text) {
-          void options
-            .saveContent(options.currentShelfId.value, index, text)
-            .catch(() => {});
+          void options.saveContent(options.currentShelfId.value, index, text).catch(() => {});
         }
       }
 
@@ -268,36 +244,20 @@ export function useReaderContentState(options: UseReaderContentStateOptions) {
       let nextText = await fetchRawChapterText(index, forceNetwork);
       nextText = await options.runReaderContentPipeline(
         "reader.content.raw",
-        options.buildReaderContentPayload(
-          "reader.content.raw",
-          nextText,
-          index,
-        ),
+        options.buildReaderContentPayload("reader.content.raw", nextText, index),
       );
       nextText = await options.runReaderContentPipeline(
         "reader.content.cleaned",
-        options.buildReaderContentPayload(
-          "reader.content.cleaned",
-          nextText,
-          index,
-        ),
+        options.buildReaderContentPayload("reader.content.cleaned", nextText, index),
       );
       nextText = await options.runReaderContentPipeline(
         "reader.content.beforePaginate",
-        options.buildReaderContentPayload(
-          "reader.content.beforePaginate",
-          nextText,
-          index,
-        ),
+        options.buildReaderContentPayload("reader.content.beforePaginate", nextText, index),
       );
       if (finalStage === "reader.content.beforeRender") {
         nextText = await options.runReaderContentPipeline(
           "reader.content.beforeRender",
-          options.buildReaderContentPayload(
-            "reader.content.beforeRender",
-            nextText,
-            index,
-          ),
+          options.buildReaderContentPayload("reader.content.beforeRender", nextText, index),
         );
       }
       processedChapterTextCache.set(cacheKey, nextText);
@@ -317,7 +277,7 @@ export function useReaderContentState(options: UseReaderContentStateOptions) {
 
   function resolveChapterSource(
     index: number,
-  ): { fileName: string; chapterUrl: string } | null {
+  ): { fileName: string; sourceDir?: string; chapterUrl: string } | null {
     const chapter = options.getChapter(index);
     if (!chapter) {
       return null;
@@ -325,14 +285,13 @@ export function useReaderContentState(options: UseReaderContentStateOptions) {
     const override = options.temporaryChapterOverrides.value[index];
     return {
       fileName: override?.fileName ?? readSource(options.fileName),
+      sourceDir:
+        override?.sourceDir ?? (options.sourceDir ? readSource(options.sourceDir) : undefined),
       chapterUrl: override?.chapterUrl ?? chapter.url,
     };
   }
 
-  function setParagraphCommentSummaries(
-    index: number,
-    summaries: ParagraphCommentSummary[],
-  ) {
+  function setParagraphCommentSummaries(index: number, summaries: ParagraphCommentSummary[]) {
     paragraphCommentSummariesByIndex.value = {
       ...paragraphCommentSummariesByIndex.value,
       [index]: summaries,
@@ -379,10 +338,7 @@ export function useReaderContentState(options: UseReaderContentStateOptions) {
     const paragraphs = splitReaderParagraphs(content);
     const contentHash = hashReaderContent(content);
     const cacheKey = `${source.fileName}\x1f${source.chapterUrl}\x1f${contentHash}`;
-    if (
-      !forceNetwork &&
-      paragraphCommentCacheKeyByIndex.get(index) === cacheKey
-    ) {
+    if (!forceNetwork && paragraphCommentCacheKeyByIndex.get(index) === cacheKey) {
       return paragraphCommentSummariesByIndex.value[index] ?? [];
     }
 
@@ -393,7 +349,7 @@ export function useReaderContentState(options: UseReaderContentStateOptions) {
 
     const request = (async () => {
       const capabilities = await options
-        .getSourceCapabilities(source.fileName)
+        .getSourceCapabilities(source.fileName, source.sourceDir)
         .catch(() => new Set<string>());
       if (!getParagraphCommentCapabilities(capabilities).counts) {
         paragraphCommentCacheKeyByIndex.set(index, cacheKey);
@@ -414,10 +370,7 @@ export function useReaderContentState(options: UseReaderContentStateOptions) {
         source.chapterUrl,
         context,
       );
-      const summaries = normalizeParagraphCommentSummaries(
-        raw,
-        paragraphs.length,
-      );
+      const summaries = normalizeParagraphCommentSummaries(raw, paragraphs.length);
       paragraphCommentCacheKeyByIndex.set(index, cacheKey);
       setParagraphCommentSummaries(index, summaries);
       return summaries;
@@ -437,11 +390,7 @@ export function useReaderContentState(options: UseReaderContentStateOptions) {
     activeHostRef: options.measureHostRef,
     backgroundHostRef: options.backgroundMeasureHostRef,
     loadChapterText: (index, forceNetwork) =>
-      fetchProcessedChapterText(
-        index,
-        "reader.content.beforePaginate",
-        forceNetwork,
-      ),
+      fetchProcessedChapterText(index, "reader.content.beforePaginate", forceNetwork),
     loadParagraphCommentSummaries: ensureParagraphCommentSummaries,
     getChapterTitle: (index) => options.getChapter(index)?.name ?? "",
     getTypography: () => options.settings.typography,
@@ -449,14 +398,9 @@ export function useReaderContentState(options: UseReaderContentStateOptions) {
     getPaginationEngine: () => options.settings.paginationEngine,
   });
 
-  const activePagedPages = computed(() =>
-    pagedCache.getPages(options.activeChapterIndex.value),
-  );
+  const activePagedPages = computed(() => pagedCache.getPages(options.activeChapterIndex.value));
   const activeParagraphCommentSummaries = computed(
-    () =>
-      paragraphCommentSummariesByIndex.value[
-        options.activeChapterIndex.value
-      ] ?? [],
+    () => paragraphCommentSummariesByIndex.value[options.activeChapterIndex.value] ?? [],
   );
   const prevBoundaryPage = computed(() =>
     options.hasPrev.value
@@ -467,10 +411,7 @@ export function useReaderContentState(options: UseReaderContentStateOptions) {
     if (!options.hasNext.value) {
       return PAGED_END_SCREEN;
     }
-    return pagedCache.getBoundaryPage(
-      options.activeChapterIndex.value + 1,
-      "first",
-    );
+    return pagedCache.getBoundaryPage(options.activeChapterIndex.value + 1, "first");
   });
 
   function clearChapterRuntimeCache(index: number) {

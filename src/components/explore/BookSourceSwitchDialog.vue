@@ -2,12 +2,7 @@
 import { ChevronLeft, X, ChevronRight } from "lucide-vue-next";
 import { useMessage } from "naive-ui";
 import { computed, ref, watch } from "vue";
-import type {
-  BookDetail,
-  BookItem,
-  BookSourceMeta,
-  ChapterItem,
-} from "@/types";
+import type { BookDetail, BookItem, BookSourceMeta, ChapterItem } from "@/types";
 import { useOverlay } from "@/composables/useOverlay";
 import {
   type CachedChapter,
@@ -50,6 +45,7 @@ interface WholeBookSwitchedPayload {
 interface TemporaryChapterSwitchPayload {
   chapterIndex: number;
   fileName: string;
+  sourceDir?: string;
   sourceName: string;
   sourceBookUrl: string;
   chapterUrl: string;
@@ -63,6 +59,7 @@ const props = defineProps<{
   mode: "whole-book" | "chapter-temp";
   currentBook: SwitchableBookMeta;
   currentFileName: string;
+  currentSourceDir?: string;
   currentSourceName: string;
   currentSourceType?: string;
   currentChapters: ChapterItem[];
@@ -104,10 +101,7 @@ const dialogTitle = computed(() =>
 );
 
 const selectedCandidate = computed(
-  () =>
-    candidates.value.find(
-      (candidate) => candidate.key === selectedCandidateKey.value,
-    ) ?? null,
+  () => candidates.value.find((candidate) => candidate.key === selectedCandidateKey.value) ?? null,
 );
 
 function candidateLatestChapter(book: BookItem): string {
@@ -120,10 +114,7 @@ function candidateMetaLine(book: BookItem): string[] {
 
 const candidateMeta = computed<SwitchableBookMeta | null>(() =>
   selectedCandidate.value
-    ? buildCandidateBookMeta(
-        selectedCandidate.value.book,
-        candidateDetail.value,
-      )
+    ? buildCandidateBookMeta(selectedCandidate.value.book, candidateDetail.value)
     : null,
 );
 
@@ -157,9 +148,7 @@ const matchingChapters = computed<ChapterMatchCandidate[]>(() => {
 
 const selectedMatch = computed(
   () =>
-    matchingChapters.value.find(
-      (item) => item.index === selectedMatchChapterIndex.value,
-    ) ?? null,
+    matchingChapters.value.find((item) => item.index === selectedMatchChapterIndex.value) ?? null,
 );
 
 const canApplyMetadataOnly = computed(
@@ -178,27 +167,17 @@ const applyButtonText = computed(() => {
 });
 
 const showDesktopSplit = computed(() => !isMobile.value);
-const showMobileList = computed(
-  () => isMobile.value && mobilePage.value === "list",
-);
+const showMobileList = computed(() => isMobile.value && mobilePage.value === "list");
 const showMobileDetail = computed(
-  () =>
-    isMobile.value &&
-    mobilePage.value === "detail" &&
-    !!selectedCandidate.value,
+  () => isMobile.value && mobilePage.value === "detail" && !!selectedCandidate.value,
 );
-const desktopDetailVisible = computed(
-  () => !isMobile.value && !!selectedCandidate.value,
-);
+const desktopDetailVisible = computed(() => !isMobile.value && !!selectedCandidate.value);
 
 function doCloseDialog() {
   emit("update:show", false);
 }
 
-const { triggerClose: closeDialog } = useOverlay(
-  () => props.show,
-  doCloseDialog,
-);
+const { triggerClose: closeDialog } = useOverlay(() => props.show, doCloseDialog);
 
 function updateDialogShow(value: boolean) {
   if (value) {
@@ -224,10 +203,7 @@ function refreshSelectedMetadataFields(nextCurrent = currentBookState.value) {
     selectedMetadataFields.value = [];
     return;
   }
-  selectedMetadataFields.value = diffMetadataFields(
-    nextCurrent,
-    candidateMeta.value,
-  );
+  selectedMetadataFields.value = diffMetadataFields(nextCurrent, candidateMeta.value);
 }
 
 function buildCachedChapters(chapters: ChapterItem[]): CachedChapter[] {
@@ -252,9 +228,7 @@ function toggleMetadataField(field: MetadataFieldKey, checked: boolean) {
   selectedMetadataFields.value = [...next];
 }
 
-function buildMetadataOnlyPayload(
-  nextCurrent: SwitchableBookMeta,
-): UpdateShelfBookPayload {
+function buildMetadataOnlyPayload(nextCurrent: SwitchableBookMeta): UpdateShelfBookPayload {
   return {
     id: props.shelfBookId ?? "",
     name: currentBookState.value.name,
@@ -264,6 +238,7 @@ function buildMetadataOnlyPayload(
     kind: nextCurrent.kind,
     bookUrl: currentBookState.value.bookUrl ?? "",
     fileName: props.currentFileName,
+    sourceDir: props.currentSourceDir,
     sourceName: props.currentSourceName,
     lastChapter: nextCurrent.lastChapter,
     totalChapters: props.currentChapters.length,
@@ -287,11 +262,9 @@ async function applySingleField(field: MetadataFieldKey) {
 
   applying.value = true;
   try {
-    const nextCurrent = applyMetadataSelection(
-      currentBookState.value,
-      candidateMeta.value,
-      [field],
-    );
+    const nextCurrent = applyMetadataSelection(currentBookState.value, candidateMeta.value, [
+      field,
+    ]);
     const shelfBook = await updateBook(buildMetadataOnlyPayload(nextCurrent));
     currentBookState.value = nextCurrent;
     refreshSelectedMetadataFields(nextCurrent);
@@ -306,14 +279,10 @@ async function applySingleField(field: MetadataFieldKey) {
           : undefined,
       sourceSwitched: false,
     });
-    const label =
-      SWITCHABLE_METADATA_FIELDS.find((item) => item.key === field)?.label ??
-      field;
+    const label = SWITCHABLE_METADATA_FIELDS.find((item) => item.key === field)?.label ?? field;
     message.success(`${label} 已更新`);
   } catch (error) {
-    message.error(
-      `写入失败: ${error instanceof Error ? error.message : String(error)}`,
-    );
+    message.error(`写入失败: ${error instanceof Error ? error.message : String(error)}`);
   } finally {
     applying.value = false;
   }
@@ -322,13 +291,13 @@ async function applySingleField(field: MetadataFieldKey) {
 async function loadSources() {
   const all = await listBookSources();
   availableSources.value = all.filter((source) => {
-    if (!source.enabled || source.fileName === props.currentFileName) {
+    const sameSource =
+      source.fileName === props.currentFileName &&
+      (source.sourceDir ?? "") === (props.currentSourceDir ?? "");
+    if (!source.enabled || sameSource) {
       return false;
     }
-    if (
-      props.currentSourceType &&
-      source.sourceType !== props.currentSourceType
-    ) {
+    if (props.currentSourceType && source.sourceType !== props.currentSourceType) {
       return false;
     }
     return true;
@@ -352,12 +321,7 @@ async function performSearch() {
       prefsStore.search.switchSourceConcurrency || 5,
       async (source) => {
         try {
-          const raw = await runSearch(
-            source.fileName,
-            keyword,
-            1,
-            source.sourceDir,
-          );
+          const raw = await runSearch(source.fileName, keyword, 1, source.sourceDir);
           if (requestToken !== activeSearchToken.value) {
             return [] as SourceCandidate[];
           }
@@ -370,6 +334,7 @@ async function performSearch() {
                 source.fileName,
                 book,
                 source.logo,
+                source.sourceDir,
               ),
             )
             .filter((candidate): candidate is SourceCandidate => !!candidate);
@@ -412,19 +377,23 @@ async function loadSelectedCandidate() {
     const detail = (await runBookInfo(
       candidate.fileName,
       candidate.book.bookUrl,
+      candidate.sourceDir,
     )) as BookDetail;
     if (requestToken !== activeDetailToken.value) {
       return;
     }
     candidateDetail.value = detail;
     const tocUrl = detail.tocUrl ?? candidate.book.bookUrl;
-    const rawChapters = await runChapterList(candidate.fileName, tocUrl);
+    const rawChapters = await runChapterList(
+      candidate.fileName,
+      tocUrl,
+      undefined,
+      candidate.sourceDir,
+    );
     if (requestToken !== activeDetailToken.value) {
       return;
     }
-    candidateChapters.value = Array.isArray(rawChapters)
-      ? (rawChapters as ChapterItem[])
-      : [];
+    candidateChapters.value = Array.isArray(rawChapters) ? (rawChapters as ChapterItem[]) : [];
     refreshSelectedMetadataFields();
     selectedMatchChapterIndex.value = matchingChapters.value[0]?.index ?? null;
   } catch (error) {
@@ -481,6 +450,7 @@ async function applySelection() {
     emit("chapter-temp-switched", {
       chapterIndex: props.currentReadChapterIndex,
       fileName: candidate.fileName,
+      sourceDir: candidate.sourceDir,
       sourceName: candidate.sourceName,
       sourceBookUrl: candidate.book.bookUrl,
       chapterUrl: match.url,
@@ -514,6 +484,7 @@ async function applySelection() {
     );
 
     let nextFileName = props.currentFileName;
+    let nextSourceDir = props.currentSourceDir;
     let nextSourceName = props.currentSourceName;
     let nextBookUrl = currentBookState.value.bookUrl ?? "";
     let nextChapters = props.currentChapters;
@@ -522,6 +493,7 @@ async function applySelection() {
 
     if (syncFutureChapters.value) {
       nextFileName = candidate.fileName;
+      nextSourceDir = candidate.sourceDir;
       nextSourceName = candidate.sourceName;
       nextBookUrl = candidate.book.bookUrl;
       nextChapters = candidateChapters.value;
@@ -529,16 +501,10 @@ async function applySelection() {
       if (props.currentReadChapterIndex >= 0) {
         const match = selectedMatch.value ??
           matchingChapters.value[0] ?? {
-            index: Math.min(
-              props.currentReadChapterIndex,
-              candidateChapters.value.length - 1,
-            ),
+            index: Math.min(props.currentReadChapterIndex, candidateChapters.value.length - 1),
             url:
               candidateChapters.value[
-                Math.min(
-                  props.currentReadChapterIndex,
-                  candidateChapters.value.length - 1,
-                )
+                Math.min(props.currentReadChapterIndex, candidateChapters.value.length - 1)
               ]?.url ?? "",
           };
         if (!match) {
@@ -559,13 +525,12 @@ async function applySelection() {
       kind: mergedMeta.kind,
       bookUrl: nextBookUrl,
       fileName: nextFileName,
+      sourceDir: nextSourceDir,
       sourceName: nextSourceName,
       lastChapter: syncFutureChapters.value
         ? nextMeta.lastChapter || nextChapters[nextChapters.length - 1]?.name
         : mergedMeta.lastChapter,
-      totalChapters: syncFutureChapters.value
-        ? nextChapters.length
-        : props.currentChapters.length,
+      totalChapters: syncFutureChapters.value ? nextChapters.length : props.currentChapters.length,
       readChapterIndex: nextReadChapterIndex,
       readChapterUrl: nextReadChapterUrl,
       sourceType: props.currentSourceType ?? "novel",
@@ -584,20 +549,14 @@ async function applySelection() {
       matchedChapterIndex: nextReadChapterIndex,
       matchedChapterUrl: nextReadChapterUrl,
       matchedChapterName:
-        nextReadChapterIndex >= 0
-          ? nextChapters[nextReadChapterIndex]?.name
-          : undefined,
+        nextReadChapterIndex >= 0 ? nextChapters[nextReadChapterIndex]?.name : undefined,
       sourceSwitched: syncFutureChapters.value,
     });
 
-    message.success(
-      syncFutureChapters.value ? "整本换源已应用" : "元信息已覆盖",
-    );
+    message.success(syncFutureChapters.value ? "整本换源已应用" : "元信息已覆盖");
     closeDialog();
   } catch (error) {
-    message.error(
-      `应用换源失败: ${error instanceof Error ? error.message : String(error)}`,
-    );
+    message.error(`应用换源失败: ${error instanceof Error ? error.message : String(error)}`);
   } finally {
     applying.value = false;
   }
@@ -628,9 +587,7 @@ watch(matchingChapters, (matches) => {
     selectedMatchChapterIndex.value = null;
     return;
   }
-  if (
-    !matches.some((match) => match.index === selectedMatchChapterIndex.value)
-  ) {
+  if (!matches.some((match) => match.index === selectedMatchChapterIndex.value)) {
     selectedMatchChapterIndex.value = matches[0].index;
   }
 });
@@ -664,9 +621,7 @@ watch(matchingChapters, (matches) => {
             <div class="switch-dialog__topbar-title">
               {{
                 showMobileDetail
-                  ? candidateMeta?.name ||
-                    selectedCandidate?.book.name ||
-                    dialogTitle
+                  ? candidateMeta?.name || selectedCandidate?.book.name || dialogTitle
                   : dialogTitle
               }}
             </div>
@@ -679,11 +634,7 @@ watch(matchingChapters, (matches) => {
             </div>
           </div>
 
-          <button
-            class="switch-dialog__icon-btn"
-            type="button"
-            @click="closeDialog"
-          >
+          <button class="switch-dialog__icon-btn" type="button" @click="closeDialog">
             <X :size="18" />
           </button>
         </div>
@@ -706,10 +657,7 @@ watch(matchingChapters, (matches) => {
                   placeholder="输入书名重新搜索"
                   @keydown.enter.prevent="performSearch"
                 />
-                <n-button
-                  type="primary"
-                  :loading="searching"
-                  @click="performSearch"
+                <n-button type="primary" :loading="searching" @click="performSearch"
                   >搜索候选书源</n-button
                 >
               </div>
@@ -729,9 +677,7 @@ watch(matchingChapters, (matches) => {
 
               <div class="switch-dialog__list-summary">
                 <div class="switch-dialog__summary-title">候选书源</div>
-                <div class="switch-dialog__summary-subtitle">
-                  点击书源进入详细差异页
-                </div>
+                <div class="switch-dialog__summary-subtitle">点击书源进入详细差异页</div>
               </div>
 
               <n-spin :show="searching">
@@ -745,17 +691,13 @@ watch(matchingChapters, (matches) => {
                   :key="candidate.key"
                   class="switch-dialog__candidate"
                   :class="{
-                    'switch-dialog__candidate--active':
-                      candidate.key === selectedCandidateKey,
+                    'switch-dialog__candidate--active': candidate.key === selectedCandidateKey,
                   }"
                   @click="selectCandidate(candidate.key)"
                 >
                   <div class="switch-dialog__candidate-main">
                     <div class="switch-dialog__candidate-body">
-                      <div
-                        v-if="candidate.book.coverUrl"
-                        class="switch-dialog__candidate-cover"
-                      >
+                      <div v-if="candidate.book.coverUrl" class="switch-dialog__candidate-cover">
                         <BookCoverImg
                           :src="candidate.book.coverUrl"
                           :base-url="candidate.book.bookUrl"
@@ -780,10 +722,7 @@ watch(matchingChapters, (matches) => {
                         >
                           最新章节：{{ candidateLatestChapter(candidate.book) }}
                         </div>
-                        <div
-                          v-if="candidate.book.status"
-                          class="switch-dialog__candidate-sub"
-                        >
+                        <div v-if="candidate.book.status" class="switch-dialog__candidate-sub">
                           状态：{{ candidate.book.status }}
                         </div>
                         <div
@@ -794,10 +733,7 @@ watch(matchingChapters, (matches) => {
                         </div>
                       </div>
                     </div>
-                    <ChevronRight
-                      class="switch-dialog__candidate-arrow"
-                      :size="18"
-                    />
+                    <ChevronRight class="switch-dialog__candidate-arrow" :size="18" />
                   </div>
                 </button>
               </n-spin>
@@ -812,10 +748,7 @@ watch(matchingChapters, (matches) => {
             }"
           >
             <div class="switch-dialog__scroll app-scrollbar">
-              <n-empty
-                v-if="!selectedCandidate"
-                description="请选择候选书源查看差异"
-              />
+              <n-empty v-if="!selectedCandidate" description="请选择候选书源查看差异" />
 
               <n-spin v-else :show="loadingCandidate">
                 <div class="switch-dialog__header">
@@ -826,11 +759,7 @@ watch(matchingChapters, (matches) => {
                     <div class="switch-dialog__subtitle">
                       {{ selectedCandidate.sourceName }}
                       ·
-                      {{
-                        candidateMeta?.author ||
-                        selectedCandidate.book.author ||
-                        "作者未知"
-                      }}
+                      {{ candidateMeta?.author || selectedCandidate.book.author || "作者未知" }}
                     </div>
                   </div>
                   <div class="switch-dialog__header-tags">
@@ -857,24 +786,12 @@ watch(matchingChapters, (matches) => {
                           :checked="selectedMetadataFields.includes(row.key)"
                           :disabled="!row.candidateValue"
                           @update:checked="
-                            (checked: boolean) =>
-                              toggleMetadataField(row.key, checked)
+                            (checked: boolean) => toggleMetadataField(row.key, checked)
                           "
                         />
                         <span>{{ row.label }}</span>
-                        <n-tag
-                          v-if="!row.different"
-                          size="small"
-                          :bordered="false"
-                          >一致</n-tag
-                        >
-                        <n-tag
-                          v-else
-                          size="small"
-                          type="warning"
-                          :bordered="false"
-                          >有差异</n-tag
-                        >
+                        <n-tag v-if="!row.different" size="small" :bordered="false">一致</n-tag>
+                        <n-tag v-else size="small" type="warning" :bordered="false">有差异</n-tag>
                         <n-button
                           v-if="mode === 'whole-book'"
                           text
@@ -887,10 +804,7 @@ watch(matchingChapters, (matches) => {
                         </n-button>
                       </div>
 
-                      <div
-                        v-if="row.key === 'coverUrl'"
-                        class="switch-dialog__cover-values"
-                      >
+                      <div v-if="row.key === 'coverUrl'" class="switch-dialog__cover-values">
                         <div class="switch-dialog__cover-card">
                           <div class="switch-dialog__row-label">当前</div>
                           <div class="switch-dialog__cover-frame">
@@ -959,10 +873,7 @@ watch(matchingChapters, (matches) => {
                   </div>
                 </div>
 
-                <div
-                  v-if="mode === 'whole-book'"
-                  class="switch-dialog__section"
-                >
+                <div v-if="mode === 'whole-book'" class="switch-dialog__section">
                   <div class="switch-dialog__section-title">应用方式</div>
                   <div class="switch-dialog__mode">
                     <div class="switch-dialog__mode-copy">
@@ -979,8 +890,7 @@ watch(matchingChapters, (matches) => {
 
                 <div
                   v-if="
-                    (mode === 'chapter-temp' || syncFutureChapters) &&
-                    currentReadChapterIndex >= 0
+                    (mode === 'chapter-temp' || syncFutureChapters) && currentReadChapterIndex >= 0
                   "
                   class="switch-dialog__section"
                 >
@@ -1006,9 +916,7 @@ watch(matchingChapters, (matches) => {
                         <div class="switch-dialog__match-main">
                           <div class="switch-dialog__match-title">
                             {{ match.name }}
-                            <n-tag size="small" :bordered="false"
-                              >评分 {{ match.score }}</n-tag
-                            >
+                            <n-tag size="small" :bordered="false">评分 {{ match.score }}</n-tag>
                           </div>
                           <div class="switch-dialog__match-reason">
                             {{ match.reasons.join(" / ") }}
@@ -1024,18 +932,14 @@ watch(matchingChapters, (matches) => {
         </div>
 
         <div class="switch-dialog__footer">
-          <n-button v-if="showMobileDetail" @click="goMobileList"
-            >返回列表</n-button
-          >
+          <n-button v-if="showMobileDetail" @click="goMobileList">返回列表</n-button>
           <n-button v-else @click="closeDialog">取消</n-button>
           <n-button
             type="primary"
             :loading="applying"
             :disabled="
               !selectedCandidate ||
-              (mode === 'whole-book' &&
-                !syncFutureChapters &&
-                !canApplyMetadataOnly)
+              (mode === 'whole-book' && !syncFutureChapters && !canApplyMetadataOnly)
             "
             @click="applySelection"
           >
@@ -1225,8 +1129,7 @@ watch(matchingChapters, (matches) => {
   .switch-dialog__candidate:hover {
     border-color: var(--color-accent);
     background: var(--color-surface);
-    box-shadow: 0 0 0 1px
-      color-mix(in srgb, var(--color-accent) 30%, transparent);
+    box-shadow: 0 0 0 1px color-mix(in srgb, var(--color-accent) 30%, transparent);
     transform: translateY(-1px);
   }
 }

@@ -1,12 +1,12 @@
 <script setup lang="ts">
-import { Edit3, Eye, Save, X } from 'lucide-vue-next';
-import { useMessage, type SelectOption } from 'naive-ui';
-import { computed, reactive, ref, watch } from 'vue';
-import { useOverlay } from '@/composables/useOverlay';
-import { useBookshelfStore, type ShelfBook, type UpdateShelfBookPayload } from '@/stores';
-import BookCoverImg from '../BookCoverImg.vue';
+import { Edit3, Eye, Save, X } from "lucide-vue-next";
+import { useMessage, type SelectOption } from "naive-ui";
+import { computed, reactive, ref, watch } from "vue";
+import { useOverlay } from "@/composables/useOverlay";
+import { useBookshelfStore, type ShelfBook, type UpdateShelfBookPayload } from "@/stores";
+import BookCoverImg from "../BookCoverImg.vue";
 
-type DetailMode = 'view' | 'edit';
+type DetailMode = "view" | "edit";
 
 interface DetailForm {
   name: string;
@@ -38,46 +38,46 @@ const props = defineProps<{
 }>();
 
 const emit = defineEmits<{
-  'update:show': [value: boolean];
+  "update:show": [value: boolean];
   saved: [bookId: string];
 }>();
 
 const message = useMessage();
 const bookshelfStore = useBookshelfStore();
 
-const mode = ref<DetailMode>('view');
+const mode = ref<DetailMode>("view");
 const saving = ref(false);
 const detailBook = ref<ShelfBook | null>(null);
 const form = reactive<DetailForm>({
-  name: '',
-  author: '',
-  coverUrl: '',
-  intro: '',
-  kind: '',
-  bookUrl: '',
-  fileName: '',
-  sourceName: '',
-  lastChapter: '',
+  name: "",
+  author: "",
+  coverUrl: "",
+  intro: "",
+  kind: "",
+  bookUrl: "",
+  fileName: "",
+  sourceName: "",
+  lastChapter: "",
   totalChapters: 0,
   readChapterIndex: -1,
-  readChapterUrl: '',
-  sourceType: 'novel',
+  readChapterUrl: "",
+  sourceType: "novel",
   addedAt: 0,
   lastReadAt: 0,
   readPageIndex: -1,
   readScrollRatio: -1,
   readPlaybackTime: -1,
-  readerSettings: '',
+  readerSettings: "",
   isPrivate: false,
 });
 
 const sourceTypeOptions: SelectOption[] = [
-  { label: '小说', value: 'novel' },
-  { label: '漫画', value: 'comic' },
-  { label: '视频', value: 'video' },
+  { label: "小说", value: "novel" },
+  { label: "漫画", value: "comic" },
+  { label: "视频", value: "video" },
 ];
 
-const dialogTitle = computed(() => (mode.value === 'edit' ? '编辑书籍详情' : '书籍详情'));
+const dialogTitle = computed(() => (mode.value === "edit" ? "编辑书籍详情" : "书籍详情"));
 
 const currentRows = computed(() => {
   const book = detailBook.value;
@@ -85,30 +85,30 @@ const currentRows = computed(() => {
     return [];
   }
   return [
-    { label: '书籍 ID', value: book.id },
-    { label: '书名', value: book.name },
-    { label: '作者', value: book.author },
-    { label: '分类', value: book.kind },
-    { label: '书源类型', value: sourceTypeLabel(book.sourceType) },
-    { label: '书籍 URL', value: book.bookUrl },
-    { label: '书源文件', value: book.fileName },
-    { label: '书源名称', value: book.sourceName },
-    { label: '最新章节', value: book.lastChapter },
-    { label: '总章节数', value: book.totalChapters },
-    { label: '阅读章节索引', value: book.readChapterIndex },
-    { label: '阅读章节 URL', value: book.readChapterUrl },
-    { label: '分页页码', value: book.readPageIndex },
-    { label: '滚动比例', value: book.readScrollRatio },
-    { label: '视频播放秒数', value: book.readPlaybackTime },
-    { label: '加入时间', value: formatTimestamp(book.addedAt) },
-    { label: '最后阅读时间', value: formatTimestamp(book.lastReadAt) },
-    { label: '隐私书籍', value: book.isPrivate ? '是' : '否' },
+    { label: "书籍 ID", value: book.id },
+    { label: "书名", value: book.name },
+    { label: "作者", value: book.author },
+    { label: "分类", value: book.kind },
+    { label: "书源类型", value: sourceTypeLabel(book.sourceType) },
+    { label: "书籍 URL", value: book.bookUrl },
+    { label: "书源文件", value: book.fileName },
+    { label: "书源名称", value: book.sourceName },
+    { label: "最新章节", value: book.lastChapter },
+    { label: "总章节数", value: book.totalChapters },
+    { label: "阅读章节索引", value: book.readChapterIndex },
+    { label: "阅读章节 URL", value: book.readChapterUrl },
+    { label: "分页页码", value: book.readPageIndex },
+    { label: "滚动比例", value: book.readScrollRatio },
+    { label: "视频播放秒数", value: book.readPlaybackTime },
+    { label: "加入时间", value: formatTimestamp(book.addedAt) },
+    { label: "最后阅读时间", value: formatTimestamp(book.lastReadAt) },
+    { label: "隐私书籍", value: book.isPrivate ? "是" : "否" },
   ];
 });
 
 function sourceTypeLabel(value: string): string {
   const label = sourceTypeOptions.find((item) => item.value === value)?.label;
-  return String(label ?? (value || '小说'));
+  return String(label ?? (value || "小说"));
 }
 
 function optionalText(value: string): string | undefined {
@@ -126,7 +126,7 @@ function normalizeNumber(value: number | null, fallback: number): number {
 
 function formatTimestamp(value: number): string {
   if (!value) {
-    return '未记录';
+    return "未记录";
   }
   return `${new Date(value).toLocaleString()} (${value})`;
 }
@@ -138,41 +138,41 @@ function resetForm(book: ShelfBook | null) {
   }
   form.name = book.name;
   form.author = book.author;
-  form.coverUrl = book.coverUrl ?? '';
-  form.intro = book.intro ?? '';
-  form.kind = book.kind ?? '';
+  form.coverUrl = book.coverUrl ?? "";
+  form.intro = book.intro ?? "";
+  form.kind = book.kind ?? "";
   form.bookUrl = book.bookUrl;
   form.fileName = book.fileName;
   form.sourceName = book.sourceName;
-  form.lastChapter = book.lastChapter ?? '';
+  form.lastChapter = book.lastChapter ?? "";
   form.totalChapters = book.totalChapters;
   form.readChapterIndex = book.readChapterIndex;
-  form.readChapterUrl = book.readChapterUrl ?? '';
-  form.sourceType = book.sourceType || 'novel';
+  form.readChapterUrl = book.readChapterUrl ?? "";
+  form.sourceType = book.sourceType || "novel";
   form.addedAt = book.addedAt;
   form.lastReadAt = book.lastReadAt;
   form.readPageIndex = book.readPageIndex;
   form.readScrollRatio = book.readScrollRatio;
   form.readPlaybackTime = book.readPlaybackTime;
-  form.readerSettings = book.readerSettings ?? '';
+  form.readerSettings = book.readerSettings ?? "";
   form.isPrivate = book.isPrivate;
 }
 
 function validateForm(): string | null {
   if (!form.name.trim()) {
-    return '书名不能为空';
+    return "书名不能为空";
   }
   if (!form.bookUrl.trim()) {
-    return '书籍 URL 不能为空';
+    return "书籍 URL 不能为空";
   }
   if (!form.fileName.trim()) {
-    return '书源文件不能为空';
+    return "书源文件不能为空";
   }
   if (!form.sourceName.trim()) {
-    return '书源名称不能为空';
+    return "书源名称不能为空";
   }
   if (!form.sourceType.trim()) {
-    return '书源类型不能为空';
+    return "书源类型不能为空";
   }
   return null;
 }
@@ -199,6 +199,7 @@ async function saveDetail() {
       kind: optionalText(form.kind),
       bookUrl: form.bookUrl.trim(),
       fileName: form.fileName.trim(),
+      sourceDir: book.sourceDir,
       sourceName: form.sourceName.trim(),
       lastChapter: optionalText(form.lastChapter),
       totalChapters: Math.max(0, normalizeInt(form.totalChapters, book.totalChapters)),
@@ -216,9 +217,9 @@ async function saveDetail() {
     const saved = await bookshelfStore.updateBook(payload);
     detailBook.value = saved;
     resetForm(saved);
-    mode.value = 'view';
-    emit('saved', saved.id);
-    message.success('书籍详情已保存');
+    mode.value = "view";
+    emit("saved", saved.id);
+    message.success("书籍详情已保存");
   } catch (saveError) {
     message.error(
       `保存失败: ${saveError instanceof Error ? saveError.message : String(saveError)}`,
@@ -229,7 +230,7 @@ async function saveDetail() {
 }
 
 function closeDialog() {
-  emit('update:show', false);
+  emit("update:show", false);
 }
 
 useOverlay(() => props.show, closeDialog);
@@ -301,18 +302,18 @@ watch(
           <span v-if="!detailBook.coverUrl">暂无封面</span>
         </div>
         <div class="bd-title">
-          <h3>{{ detailBook.name || '未知书名' }}</h3>
-          <p>{{ detailBook.author || '佚名' }}</p>
+          <h3>{{ detailBook.name || "未知书名" }}</h3>
+          <p>{{ detailBook.author || "佚名" }}</p>
           <p>
             {{ sourceTypeLabel(detailBook.sourceType) }} ·
-            {{ detailBook.sourceName || '未知书源' }}
+            {{ detailBook.sourceName || "未知书源" }}
           </p>
         </div>
       </div>
 
       <section class="bd-section">
         <h4>简介</h4>
-        <p class="bd-long-text">{{ detailBook.intro || '未记录' }}</p>
+        <p class="bd-long-text">{{ detailBook.intro || "未记录" }}</p>
       </section>
 
       <section class="bd-section">
@@ -320,14 +321,14 @@ watch(
         <dl class="bd-detail-grid">
           <template v-for="row in currentRows" :key="row.label">
             <dt>{{ row.label }}</dt>
-            <dd>{{ row.value ?? '未记录' }}</dd>
+            <dd>{{ row.value ?? "未记录" }}</dd>
           </template>
         </dl>
       </section>
 
       <section class="bd-section">
         <h4>阅读器设置</h4>
-        <pre class="bd-pre">{{ detailBook.readerSettings || '未记录' }}</pre>
+        <pre class="bd-pre">{{ detailBook.readerSettings || "未记录" }}</pre>
       </section>
     </div>
 

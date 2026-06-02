@@ -1,11 +1,11 @@
 <script setup lang="ts">
-import type { WholeBookSwitchedPayload } from '@/components/reader/types';
-import type { CachedChapter, ChapterItem, ShelfBook } from '@/stores';
-import BookCoverGeneratorDialog from '@/components/bookshelf/BookCoverGeneratorDialog.vue';
-import BookDetailEditorDialog from '@/components/bookshelf/BookDetailEditorDialog.vue';
-import BookExportDialog from '@/components/bookshelf/BookExportDialog.vue';
-import BookSourceSwitchDialog from '@/components/explore/BookSourceSwitchDialog.vue';
-import TxtImportDialog from '@/features/local-txt/TxtImportDialog.vue';
+import type { WholeBookSwitchedPayload } from "@/components/reader/types";
+import type { CachedChapter, ChapterItem, ShelfBook } from "@/stores";
+import BookCoverGeneratorDialog from "@/components/bookshelf/BookCoverGeneratorDialog.vue";
+import BookDetailEditorDialog from "@/components/bookshelf/BookDetailEditorDialog.vue";
+import BookExportDialog from "@/components/bookshelf/BookExportDialog.vue";
+import BookSourceSwitchDialog from "@/components/explore/BookSourceSwitchDialog.vue";
+import TxtImportDialog from "@/features/local-txt/TxtImportDialog.vue";
 
 defineProps<{
   showSourceSwitchDialog: boolean;
@@ -18,21 +18,21 @@ defineProps<{
   exportCachedChapters: CachedChapter[];
   showBookDetailDialog: boolean;
   bookDetailBook: ShelfBook | null;
-  bookDetailMode: 'view' | 'edit';
+  bookDetailMode: "view" | "edit";
   showTxtImportDialog: boolean;
 }>();
 
 const emit = defineEmits<{
-  (e: 'update:showSourceSwitchDialog', value: boolean): void;
-  (e: 'update:showCoverGeneratorDialog', value: boolean): void;
-  (e: 'update:showExportDialog', value: boolean): void;
-  (e: 'update:showBookDetailDialog', value: boolean): void;
-  (e: 'update:showTxtImportDialog', value: boolean): void;
-  (e: 'whole-book-switched', payload: WholeBookSwitchedPayload): void;
-  (e: 'cover-applied', bookId: string): void;
-  (e: 'book-detail-saved', bookId: string): void;
+  (e: "update:showSourceSwitchDialog", value: boolean): void;
+  (e: "update:showCoverGeneratorDialog", value: boolean): void;
+  (e: "update:showExportDialog", value: boolean): void;
+  (e: "update:showBookDetailDialog", value: boolean): void;
+  (e: "update:showTxtImportDialog", value: boolean): void;
+  (e: "whole-book-switched", payload: WholeBookSwitchedPayload): void;
+  (e: "cover-applied", bookId: string): void;
+  (e: "book-detail-saved", bookId: string): void;
   (
-    e: 'txt-imported',
+    e: "txt-imported",
     payload: {
       title: string;
       author: string;
@@ -57,6 +57,7 @@ const emit = defineEmits<{
       bookUrl: switchTargetBook?.bookUrl,
     }"
     :current-file-name="switchTargetBook?.fileName ?? ''"
+    :current-source-dir="switchTargetBook?.sourceDir"
     :current-source-name="switchTargetBook?.sourceName ?? ''"
     :current-source-type="switchTargetBook?.sourceType ?? 'novel'"
     :current-chapters="switchTargetChapters"

@@ -153,6 +153,15 @@ pub fn eval_source_function(
     eval_js(&script, "", "")
 }
 
+pub fn eval_source_function_value(
+    source: &str,
+    function_name: &str,
+    args: &[JsSourceArg],
+) -> anyhow::Result<JsonValue> {
+    let raw = eval_source_function(source, function_name, args)?;
+    Ok(serde_json::from_str::<JsonValue>(&raw).unwrap_or(JsonValue::String(raw)))
+}
+
 fn eval_js_inner(
     script: &str,
     input: Option<&str>,

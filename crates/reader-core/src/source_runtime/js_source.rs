@@ -1,6 +1,6 @@
 use crate::dto::{BookDetail, BookItem, ChapterItem};
 use crate::error::ReaderCoreError;
-use crate::parser::js::{eval_source_function, JsSourceArg};
+use crate::parser::js::{eval_source_function, eval_source_function_value, JsSourceArg};
 use serde_json::Value;
 
 pub struct JsSourceRuntime {
@@ -75,6 +75,19 @@ impl JsSourceRuntime {
             Ok(value) => Ok(value),
             Err(_) => Ok(Value::String(raw)),
         }
+    }
+
+    pub fn call_function(
+        &self,
+        function_name: &str,
+        args: &[JsSourceArg],
+    ) -> Result<Value, ReaderCoreError> {
+        eval_source_function_value(&self.content, function_name, args).map_err(|err| {
+            ReaderCoreError::Message(format!(
+                "JS 书源执行失败 [{}::{function_name}]: {err}",
+                self.file_name
+            ))
+        })
     }
 
     fn call_first(&self, names: &[&str], args: &[JsSourceArg]) -> Result<String, ReaderCoreError> {

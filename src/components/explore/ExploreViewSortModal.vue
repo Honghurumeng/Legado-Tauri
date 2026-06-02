@@ -1,8 +1,8 @@
 <script setup lang="ts">
-import { GripVertical } from 'lucide-vue-next';
-import { ref, watch } from 'vue';
-import type { BookSourceMeta } from '@/types';
-import { useOverlay } from '@/composables/useOverlay';
+import { GripVertical } from "lucide-vue-next";
+import { ref, watch } from "vue";
+import type { BookSourceMeta } from "@/types";
+import { useOverlay } from "@/composables/useOverlay";
 
 const props = defineProps<{
   show: boolean;
@@ -10,13 +10,13 @@ const props = defineProps<{
 }>();
 
 const emit = defineEmits<{
-  'update:show': [value: boolean];
-  confirm: [fileNames: string[]];
+  "update:show": [value: boolean];
+  confirm: [sourceKeys: string[]];
 }>();
 
 useOverlay(
   () => props.show,
-  () => emit('update:show', false),
+  () => emit("update:show", false),
 );
 
 // 排序列表（打开弹窗时从 sources 初始化）
@@ -33,10 +33,10 @@ watch(
 
 function handleConfirm() {
   emit(
-    'confirm',
-    sortList.value.map((s) => s.fileName),
+    "confirm",
+    sortList.value.map((s) => s.sourceKey || `${s.sourceDir}::${s.fileName}`),
   );
-  emit('update:show', false);
+  emit("update:show", false);
 }
 
 // ── 排序列表拖拽（Pointer Events，避免 Tauri/WebView2 DnD 问题） ─────────
@@ -53,7 +53,7 @@ function startSortDrag(e: PointerEvent, idx: number) {
     if (!sortListEl.value) {
       return;
     }
-    const items = sortListEl.value.querySelectorAll<HTMLElement>('[data-sidx]');
+    const items = sortListEl.value.querySelectorAll<HTMLElement>("[data-sidx]");
     for (const item of items) {
       const r = item.getBoundingClientRect();
       if (ev.clientY >= r.top && ev.clientY <= r.bottom) {
@@ -64,7 +64,7 @@ function startSortDrag(e: PointerEvent, idx: number) {
   }
 
   function onUp() {
-    window.removeEventListener('pointermove', onMove);
+    window.removeEventListener("pointermove", onMove);
     const from = ptrFrom.value;
     const to = ptrOver.value;
     ptrFrom.value = -1;
@@ -77,8 +77,8 @@ function startSortDrag(e: PointerEvent, idx: number) {
     }
   }
 
-  window.addEventListener('pointermove', onMove);
-  window.addEventListener('pointerup', onUp, { once: true });
+  window.addEventListener("pointermove", onMove);
+  window.addEventListener("pointerup", onUp, { once: true });
 }
 </script>
 
@@ -95,7 +95,7 @@ function startSortDrag(e: PointerEvent, idx: number) {
     <div ref="sortListEl" class="ev-sort-list">
       <div
         v-for="(src, idx) in sortList"
-        :key="src.fileName"
+        :key="src.sourceKey || `${src.sourceDir}::${src.fileName}`"
         :data-sidx="idx"
         class="ev-sort-item"
         :class="{

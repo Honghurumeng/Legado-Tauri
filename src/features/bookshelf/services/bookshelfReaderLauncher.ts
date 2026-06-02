@@ -66,11 +66,14 @@ export function useBookshelfReaderLauncher(message: MessageApi) {
         const info = await scriptBridgeStore.runBookInfo(
           book.fileName,
           book.bookUrl,
+          book.sourceDir,
         );
         const tocUrl = (info as { tocUrl?: string }).tocUrl ?? book.bookUrl;
         const raw = await scriptBridgeStore.runChapterList(
           book.fileName,
           tocUrl,
+          undefined,
+          book.sourceDir,
         );
         const fetched = (raw as RawChapterItem[]).map((chapter, index) => ({
           index,
@@ -153,6 +156,7 @@ export function useBookshelfReaderLauncher(message: MessageApi) {
     }
     const bookUrl = readerStore.readerBookInfo?.bookUrl;
     const fileName = readerStore.readerFileName;
+    const sourceDir = readerStore.readerSourceDir || readerStore.readerBookInfo?.sourceDir;
     if (!bookUrl || !fileName || !readerStore.readerShelfId) {
       message.warning("无法获取书籍地址，请先确保书籍已加入书架");
       return;
@@ -160,9 +164,9 @@ export function useBookshelfReaderLauncher(message: MessageApi) {
     readerStore.refreshingToc = true;
     bookshelfStore.beginTocRefresh(readerStore.readerShelfId);
     try {
-      const info = await scriptBridgeStore.runBookInfo(fileName, bookUrl);
+      const info = await scriptBridgeStore.runBookInfo(fileName, bookUrl, sourceDir);
       const tocUrl = (info as { tocUrl?: string }).tocUrl ?? bookUrl;
-      const raw = await scriptBridgeStore.runChapterList(fileName, tocUrl);
+      const raw = await scriptBridgeStore.runChapterList(fileName, tocUrl, undefined, sourceDir);
       const fetched = (raw as RawChapterItem[]).map((chapter, index) => ({
         index,
         name: chapter.name,
@@ -172,12 +176,8 @@ export function useBookshelfReaderLauncher(message: MessageApi) {
         price: chapter.price,
         currency: chapter.currency,
       }));
-      const oldUrls = new Set(
-        readerStore.readerChapters.map((chapter) => chapter.url),
-      );
-      const newCount = fetched.filter(
-        (chapter) => !oldUrls.has(chapter.url),
-      ).length;
+      const oldUrls = new Set(readerStore.readerChapters.map((chapter) => chapter.url));
+      const newCount = fetched.filter((chapter) => !oldUrls.has(chapter.url)).length;
       readerStore.setChapters(
         fetched.map((chapter) => ({
           name: chapter.name,
@@ -195,9 +195,7 @@ export function useBookshelfReaderLauncher(message: MessageApi) {
         message.info("目录已是最新，无新章节");
       }
     } catch (error: unknown) {
-      message.error(
-        `更新目录失败：${error instanceof Error ? error.message : String(error)}`,
-      );
+      message.error(`更新目录失败：${error instanceof Error ? error.message : String(error)}`);
     } finally {
       bookshelfStore.endTocRefresh(readerStore.readerShelfId);
       readerStore.refreshingToc = false;
@@ -205,14 +203,10 @@ export function useBookshelfReaderLauncher(message: MessageApi) {
   }
 
   function syncOpenReaderBookInfo(bookId: string) {
-    readerStore.syncOpenReaderBookInfo(
-      bookshelfStore.books.find((book) => book.id === bookId),
-    );
+    readerStore.syncOpenReaderBookInfo(bookshelfStore.books.find((book) => book.id === bookId));
   }
 
-  function currentChaptersForSwitch(
-    targetBook: ShelfBook | null,
-  ): ChapterItem[] {
+  function currentChaptersForSwitch(targetBook: ShelfBook | null): ChapterItem[] {
     return readerStore.readerShelfId === targetBook?.id
       ? readerStore.readerChapters
       : uiStore.switchTargetChapters;

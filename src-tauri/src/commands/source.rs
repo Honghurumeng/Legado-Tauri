@@ -211,6 +211,7 @@ pub async fn booksource_eval(
     state: State<'_, AppState>,
     file_name: String,
     entry_code: Option<String>,
+    source_dir: Option<String>,
 ) -> CommandResult<String> {
     if entry_code
         .as_deref()
@@ -225,7 +226,7 @@ pub async fn booksource_eval(
     }
     state
         .core
-        .eval_source_capabilities(&file_name)
+        .eval_source_capabilities(&file_name, source_dir.as_deref())
         .await
         .map_err(map_err)
 }

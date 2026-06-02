@@ -5,6 +5,7 @@ import { invokeWithTimeout } from "@/composables/useInvoke";
 export interface PrefetchPayload {
   id: string;
   fileName: string;
+  sourceDir?: string;
   bookUrl: string;
   bookName: string;
   sourceType: string;
@@ -66,10 +67,7 @@ function parseProgressPayload(value: unknown): PrefetchProgressPayload | null {
   ) {
     return null;
   }
-  const error =
-    "error" in value && typeof value.error === "string"
-      ? value.error
-      : undefined;
+  const error = "error" in value && typeof value.error === "string" ? value.error : undefined;
   return { taskId, done, total, chapterIndex, error };
 }
 
@@ -88,9 +86,8 @@ export const usePrefetchStore = defineStore("prefetch", () => {
   let _doneUnlisten: (() => void) | null = null;
   let _silentProgressUnlisten: (() => void) | null = null;
   let _silentDoneUnlisten: (() => void) | null = null;
-  let _onChapterCached:
-    | ((chapterIndex: number, progress: PrefetchProgressPayload) => void)
-    | null = null;
+  let _onChapterCached: ((chapterIndex: number, progress: PrefetchProgressPayload) => void) | null =
+    null;
   let _onSilentChapterCached: ((chapterIndex: number) => void) | null = null;
 
   function cleanupManual() {
@@ -112,30 +109,24 @@ export const usePrefetchStore = defineStore("prefetch", () => {
   async function setupManualListeners(tid: string) {
     try {
       const { listen } = await import("@tauri-apps/api/event");
-      _progressUnlisten = await listen<PrefetchProgressPayload>(
-        "shelf:prefetch-progress",
-        (ev) => {
-          if (ev.payload.taskId !== tid) {
-            return;
-          }
-          manualProgress.value = {
-            done: ev.payload.done,
-            total: ev.payload.total,
-          };
-          _onChapterCached?.(ev.payload.chapterIndex, ev.payload);
-        },
-      );
-      _doneUnlisten = await listen<{ taskId: string }>(
-        "shelf:prefetch-done",
-        (ev) => {
-          if (ev.payload.taskId !== tid) {
-            return;
-          }
-          manualRunning.value = false;
-          manualTaskId.value = "";
-          cleanupManual();
-        },
-      );
+      _progressUnlisten = await listen<PrefetchProgressPayload>("shelf:prefetch-progress", (ev) => {
+        if (ev.payload.taskId !== tid) {
+          return;
+        }
+        manualProgress.value = {
+          done: ev.payload.done,
+          total: ev.payload.total,
+        };
+        _onChapterCached?.(ev.payload.chapterIndex, ev.payload);
+      });
+      _doneUnlisten = await listen<{ taskId: string }>("shelf:prefetch-done", (ev) => {
+        if (ev.payload.taskId !== tid) {
+          return;
+        }
+        manualRunning.value = false;
+        manualTaskId.value = "";
+        cleanupManual();
+      });
     } catch {
       // Tauri 事件不可用（WS 模式或鸿蒙 ArkWeb）：回退到 DOM CustomEvent
       // Index.ets 的 EventBus 监听器会通过 runJavaScript 把进度推送为 shelf:prefetch-* 自定义事件
@@ -160,8 +151,7 @@ export const usePrefetchStore = defineStore("prefetch", () => {
       window.addEventListener("shelf:prefetch-done", doneHandler);
       _progressUnlisten = () =>
         window.removeEventListener("shelf:prefetch-progress", progressHandler);
-      _doneUnlisten = () =>
-        window.removeEventListener("shelf:prefetch-done", doneHandler);
+      _doneUnlisten = () => window.removeEventListener("shelf:prefetch-done", doneHandler);
     }
   }
 
@@ -178,17 +168,14 @@ export const usePrefetchStore = defineStore("prefetch", () => {
         }
         _onSilentChapterCached?.(ev.payload.chapterIndex);
       });
-      _silentDoneUnlisten = await listen<{ taskId: string }>(
-        "shelf:prefetch-done",
-        (ev) => {
-          if (ev.payload.taskId !== tid) {
-            return;
-          }
-          silentRunning.value = false;
-          silentTaskId.value = "";
-          cleanupSilent();
-        },
-      );
+      _silentDoneUnlisten = await listen<{ taskId: string }>("shelf:prefetch-done", (ev) => {
+        if (ev.payload.taskId !== tid) {
+          return;
+        }
+        silentRunning.value = false;
+        silentTaskId.value = "";
+        cleanupSilent();
+      });
     } catch {
       // Tauri 事件不可用（WS 模式或鸿蒙 ArkWeb）：回退到 DOM CustomEvent
       const silentProgressHandler = (ev: Event) => {
@@ -210,10 +197,7 @@ export const usePrefetchStore = defineStore("prefetch", () => {
       window.addEventListener("shelf:prefetch-progress", silentProgressHandler);
       window.addEventListener("shelf:prefetch-done", silentDoneHandler);
       _silentProgressUnlisten = () =>
-        window.removeEventListener(
-          "shelf:prefetch-progress",
-          silentProgressHandler,
-        );
+        window.removeEventListener("shelf:prefetch-progress", silentProgressHandler);
       _silentDoneUnlisten = () =>
         window.removeEventListener("shelf:prefetch-done", silentDoneHandler);
     }
@@ -225,18 +209,11 @@ export const usePrefetchStore = defineStore("prefetch", () => {
    */
   async function startManualPrefetch(
     payload: PrefetchPayload,
-    onChapterCached?: (
-      chapterIndex: number,
-      progress: PrefetchProgressPayload,
-    ) => void,
+    onChapterCached?: (chapterIndex: number, progress: PrefetchProgressPayload) => void,
   ): Promise<void> {
     if (manualTaskId.value) {
       try {
-        await invokeWithTimeout(
-          "booksource_cancel",
-          { taskId: manualTaskId.value },
-          3000,
-        );
+        await invokeWithTimeout("booksource_cancel", { taskId: manualTaskId.value }, 3000);
       } catch {
         // 忽略
       }

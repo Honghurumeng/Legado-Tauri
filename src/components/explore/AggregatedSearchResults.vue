@@ -1,10 +1,10 @@
 <script setup lang="ts">
-import { computed } from 'vue';
-import type { BookItem } from '@/stores';
-import type { TaggedBookItem, AggregatedBook } from './types';
+import { computed } from "vue";
+import type { BookItem } from "@/stores";
+import type { TaggedBookItem, AggregatedBook } from "./types";
 export type { TaggedBookItem, AggregatedBook };
-import AppEmpty from '../base/AppEmpty.vue';
-import StackedBookCard from './StackedBookCard.vue';
+import AppEmpty from "../base/AppEmpty.vue";
+import StackedBookCard from "./StackedBookCard.vue";
 
 const props = defineProps<{
   keyword: string;
@@ -15,12 +15,12 @@ const props = defineProps<{
 }>();
 
 const emit = defineEmits<{
-  (e: 'select', book: BookItem, fileName: string): void;
+  (e: "select", book: BookItem, fileName: string, sourceDir?: string): void;
 }>();
 
 // ── 文字相似度（Dice 系数，基于 bigram） ─────────────────────────────────
 function bigrams(str: string): Set<string> {
-  const s = str.toLowerCase().replace(/\s+/g, '');
+  const s = str.toLowerCase().replace(/\s+/g, "");
   const set = new Set<string>();
   for (let i = 0; i < s.length - 1; i++) {
     set.add(s.substring(i, i + 2));
@@ -32,8 +32,8 @@ function diceSimilarity(a: string, b: string): number {
   if (!a || !b) {
     return 0;
   }
-  const na = a.toLowerCase().replace(/\s+/g, '');
-  const nb = b.toLowerCase().replace(/\s+/g, '');
+  const na = a.toLowerCase().replace(/\s+/g, "");
+  const nb = b.toLowerCase().replace(/\s+/g, "");
   if (na === nb) {
     return 1;
   }
@@ -54,8 +54,8 @@ function diceSimilarity(a: string, b: string): number {
 
 /** 判断两本书是否为同一本（名称相似度高） */
 function isSameBook(a: BookItem, b: BookItem): boolean {
-  const nameA = a.name.toLowerCase().replace(/\s+/g, '');
-  const nameB = b.name.toLowerCase().replace(/\s+/g, '');
+  const nameA = a.name.toLowerCase().replace(/\s+/g, "");
+  const nameB = b.name.toLowerCase().replace(/\s+/g, "");
   if (nameA === nameB) {
     return true;
   }
@@ -134,7 +134,7 @@ const aggregatedBooks = computed<AggregatedBook[]>(() => {
         :key="idx"
         :group="group"
         :show-cover="showCovers ?? true"
-        @select="(book, fileName) => emit('select', book, fileName)"
+        @select="(book, fileName, sourceDir) => emit('select', book, fileName, sourceDir)"
       />
     </div>
 

@@ -1,11 +1,11 @@
 <script setup lang="ts">
-import { openUrl } from '@tauri-apps/plugin-opener';
-import { computed } from 'vue';
-import type { BookItem } from '@/stores';
-import type { BookSourceMeta } from '../../composables/useBookSource';
-import defaultLogoUrl from '../../assets/booksource-default.svg';
-import SourceTypeBadge from '../base/SourceTypeBadge.vue';
-import BookCard from './BookCard.vue';
+import { openUrl } from "@tauri-apps/plugin-opener";
+import { computed } from "vue";
+import type { BookItem } from "@/stores";
+import type { BookSourceMeta } from "../../composables/useBookSource";
+import defaultLogoUrl from "../../assets/booksource-default.svg";
+import SourceTypeBadge from "../base/SourceTypeBadge.vue";
+import BookCard from "./BookCard.vue";
 
 const props = defineProps<{
   source: BookSourceMeta;
@@ -16,12 +16,12 @@ const props = defineProps<{
 }>();
 
 const emit = defineEmits<{
-  (e: 'select', book: BookItem, fileName: string): void;
+  (e: "select", book: BookItem, fileName: string, sourceDir?: string): void;
 }>();
 
 const sourceTypeIsNonDefault = computed(() => {
   const t = props.source.sourceType;
-  return !!t && t !== 'novel';
+  return !!t && t !== "novel";
 });
 </script>
 
@@ -75,7 +75,7 @@ const sourceTypeIsNonDefault = computed(() => {
         :key="book.bookUrl"
         :book="book"
         :show-cover="showCovers ?? true"
-        @select="emit('select', book, source.fileName)"
+        @select="emit('select', book, source.fileName, source.sourceDir)"
       />
     </div>
   </div>

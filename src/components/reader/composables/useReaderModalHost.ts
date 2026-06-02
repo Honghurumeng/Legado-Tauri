@@ -57,10 +57,7 @@ interface ReaderModeRefLike {
 }
 
 interface ReaderPagedCacheLike {
-  buildAnchorForChapterPage: (
-    chapterIndex: number,
-    pageIndex: number,
-  ) => ReadingAnchor;
+  buildAnchorForChapterPage: (chapterIndex: number, pageIndex: number) => ReadingAnchor;
   invalidatePages: () => void;
   paginationMeasurementData: Ref<PaginationMeasurementData | null>;
 }
@@ -104,6 +101,7 @@ interface UseReaderModalHostOptions {
   getChapterName: () => string;
   getChapterUrl: () => string;
   getFileName: () => string;
+  getSourceDir: () => string | undefined;
   getSourceType: () => string | undefined;
   getRefreshingToc: () => boolean | undefined;
   getBookInfo: () => ReaderBookInfo | undefined;
@@ -124,9 +122,7 @@ interface UseReaderModalHostOptions {
   currentScrollRatio: Ref<number>;
   pagedPageIndex: Ref<number>;
   cachedIndices: Ref<Set<number>>;
-  temporaryChapterOverrides: Ref<
-    Record<number, TemporaryChapterSourceOverride>
-  >;
+  temporaryChapterOverrides: Ref<Record<number, TemporaryChapterSourceOverride>>;
   pendingRestorePageIndex: Ref<number>;
   pendingRestoreScrollRatio: Ref<number>;
   pendingResumePlaybackTime: Ref<number>;
@@ -198,15 +194,13 @@ interface UseReaderModalHostOptions {
       kind?: string;
       bookUrl: string;
       lastChapter?: string;
+      sourceDir?: string;
       sourceType: string;
     },
     fileName: string,
     sourceName: string,
   ) => Promise<{ id: string }>;
-  saveChapters: (
-    shelfId: string,
-    chapters: CachedChapter[],
-  ) => Promise<unknown>;
+  saveChapters: (shelfId: string, chapters: CachedChapter[]) => Promise<unknown>;
   deleteContent: (shelfId: string, chapterIndex: number) => Promise<unknown>;
   getShelfBook: (shelfId: string) => Promise<ShelfReaderSettingsSnapshot>;
   activateBookSettings: (bookId: string, savedJson?: string) => void;
@@ -262,10 +256,7 @@ interface UseReaderModalHostOptions {
   clearAllRuntimeCache: () => void;
   invalidatePages: () => void;
   resetProgressSyncState: () => void;
-  reportPluginToast?: (
-    text: string,
-    type: "info" | "success" | "warning" | "error",
-  ) => void;
+  reportPluginToast?: (text: string, type: "info" | "success" | "warning" | "error") => void;
   clearAllSeamlessSlots: () => void;
   getShelfDataReady: () => Promise<void> | null;
   setShelfDataReady: (ready: Promise<void> | null) => void;
@@ -369,6 +360,7 @@ export function useReaderModalHost(options: UseReaderModalHostOptions) {
           kind: info.kind,
           bookUrl: info.bookUrl ?? "",
           lastChapter: info.lastChapter,
+          sourceDir: options.getSourceDir() ?? info.sourceDir,
           sourceType: options.getSourceType() ?? "novel",
         },
         options.getFileName(),
@@ -696,8 +688,7 @@ export function useReaderModalHost(options: UseReaderModalHostOptions) {
       source_type: options.getSourceType() ?? "novel",
       chapter_name: options.getChapterName(),
       chapter_index: options.getCurrentIndex(),
-      shelf_book_id:
-        options.getShelfBookId() ?? options.localAddedShelfId.value,
+      shelf_book_id: options.getShelfBookId() ?? options.localAddedShelfId.value,
     }),
     readerBodyRef: options.readerBodyRef,
     activeChapterIndex: options.activeChapterIndex,
@@ -753,11 +744,7 @@ export function useReaderModalHost(options: UseReaderModalHostOptions) {
       resizeDebounceTimer = null;
       cancelAnimationFrame(resizeRaf);
       resizeRaf = requestAnimationFrame(() => {
-        if (
-          !options.getShow() ||
-          options.openingChapter.value ||
-          options.restoringPosition.value
-        ) {
+        if (!options.getShow() || options.openingChapter.value || options.restoringPosition.value) {
           return;
         }
 
@@ -844,8 +831,7 @@ export function useReaderModalHost(options: UseReaderModalHostOptions) {
 
       if (nextMode === "scroll") {
         if (options.currentScrollRatio.value >= 0) {
-          options.pendingRestoreScrollRatio.value =
-            options.currentScrollRatio.value;
+          options.pendingRestoreScrollRatio.value = options.currentScrollRatio.value;
         }
         void options.openLinearChapter(options.activeChapterIndex.value);
         return;
@@ -855,9 +841,7 @@ export function useReaderModalHost(options: UseReaderModalHostOptions) {
         void options.openPagedChapter(options.activeChapterIndex.value, {
           position: options.currentScrollRatio.value >= 0 ? "resume" : "first",
           pageRatio:
-            options.currentScrollRatio.value >= 0
-              ? options.currentScrollRatio.value
-              : undefined,
+            options.currentScrollRatio.value >= 0 ? options.currentScrollRatio.value : undefined,
         });
       }
     },
@@ -913,9 +897,7 @@ export function useReaderModalHost(options: UseReaderModalHostOptions) {
       if (!text) {
         return;
       }
-      const prefix = event.payload.pluginId
-        ? `[${event.payload.pluginId}] `
-        : "";
+      const prefix = event.payload.pluginId ? `[${event.payload.pluginId}] ` : "";
       switch (event.payload.type) {
         case "success":
           options.message.success(prefix + text);
@@ -940,10 +922,7 @@ export function useReaderModalHost(options: UseReaderModalHostOptions) {
     window.removeEventListener("keydown", onKeyDown);
     window.removeEventListener("resize", schedulePagedRepaginate);
     window.removeEventListener("orientationchange", schedulePagedRepaginate);
-    document.removeEventListener(
-      "visibilitychange",
-      options.onVisibilityChange,
-    );
+    document.removeEventListener("visibilitychange", options.onVisibilityChange);
     window.removeEventListener("beforeunload", options.onBeforeUnloadSave);
     options.stopAutoSave();
     void options.saveDetailedProgress();

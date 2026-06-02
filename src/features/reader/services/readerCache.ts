@@ -2,10 +2,7 @@ import type { MessageApi } from "naive-ui";
 import type { ComputedRef, Ref } from "vue";
 import type { ReadingAnchor } from "@/components/reader/composables/usePagination";
 import type { OpenChapterOptions } from "@/components/reader/composables/useReaderChapterOpen";
-import {
-  comicCacheClear,
-  comicCacheClearChapter,
-} from "@/composables/useBookSource";
+import { comicCacheClear, comicCacheClearChapter } from "@/composables/useBookSource";
 import {
   usePrefetchStore,
   useAppConfigStore,
@@ -16,6 +13,7 @@ import {
 export interface ReaderPrefetchControllerOptions {
   currentShelfId: ComputedRef<string | undefined>;
   getFileName: () => string;
+  getSourceDir?: () => string | undefined;
   message: MessageApi;
   getBookUrl: () => string;
   getBookName: () => string;
@@ -25,16 +23,12 @@ export interface ReaderPrefetchControllerOptions {
   markCached: (chapterIndex: number) => void;
 }
 
-export function createReaderPrefetchController(
-  options: ReaderPrefetchControllerOptions,
-) {
-  function buildPrefetchPayload(
-    startIndex: number,
-    count: number,
-  ): PrefetchPayload {
+export function createReaderPrefetchController(options: ReaderPrefetchControllerOptions) {
+  function buildPrefetchPayload(startIndex: number, count: number): PrefetchPayload {
     return {
       id: options.currentShelfId.value ?? "",
       fileName: options.getFileName(),
+      sourceDir: options.getSourceDir?.(),
       bookUrl: options.getBookUrl(),
       bookName: options.getBookName(),
       sourceType: options.getSourceType(),
@@ -57,8 +51,7 @@ export function createReaderPrefetchController(
       return;
     }
     try {
-      const concurrency =
-        useAppConfigStore().config.cache_prefetch_concurrency || 2;
+      const concurrency = useAppConfigStore().config.cache_prefetch_concurrency || 2;
       await usePrefetchStore().startSilentPrefetch(
         { ...buildPrefetchPayload(fromIndex, count), concurrency },
         options.markCached,
@@ -81,8 +74,7 @@ export function createReaderPrefetchController(
       return;
     }
     try {
-      const concurrency =
-        useAppConfigStore().config.cache_prefetch_concurrency || 2;
+      const concurrency = useAppConfigStore().config.cache_prefetch_concurrency || 2;
       await usePrefetchStore().startManualPrefetch(
         {
           ...buildPrefetchPayload(options.getActiveChapterIndex(), count),
@@ -118,10 +110,7 @@ export interface ReaderCacheControllerOptions {
   getBookUrl: () => string;
   getBookName: () => string;
   getChapter: (index: number) => ChapterItem | undefined;
-  buildAnchorForChapterPage: (
-    chapterIndex: number,
-    pageIndex: number,
-  ) => ReadingAnchor | undefined;
+  buildAnchorForChapterPage: (chapterIndex: number, pageIndex: number) => ReadingAnchor | undefined;
   clearChapterRuntimeCache: (index: number) => void;
   clearAllRuntimeCache: () => void;
   invalidatePages: () => void;
@@ -129,9 +118,7 @@ export interface ReaderCacheControllerOptions {
   openChapter: (index: number, options?: OpenChapterOptions) => Promise<void>;
 }
 
-export function createReaderCacheController(
-  options: ReaderCacheControllerOptions,
-) {
+export function createReaderCacheController(options: ReaderCacheControllerOptions) {
   async function forceRefreshChapter() {
     const index = options.activeChapterIndex.value;
     const chapter = options.getChapter(index);
@@ -141,16 +128,12 @@ export function createReaderCacheController(
 
     let anchor: ReadingAnchor | undefined;
     if (options.isPagedMode.value) {
-      anchor = options.buildAnchorForChapterPage(
-        index,
-        options.pagedPageIndex.value,
-      );
+      anchor = options.buildAnchorForChapterPage(index, options.pagedPageIndex.value);
       options.pendingRestorePageIndex.value = options.pagedPageIndex.value;
       options.pendingRestoreScrollRatio.value = -1;
     } else {
       options.pendingRestorePageIndex.value = options.currentPageIndex.value;
-      options.pendingRestoreScrollRatio.value =
-        options.currentScrollRatio.value;
+      options.pendingRestoreScrollRatio.value = options.currentScrollRatio.value;
     }
 
     options.clearChapterRuntimeCache(index);
@@ -243,9 +226,7 @@ export function createReaderCacheController(
     if (options.currentShelfId.value) {
       const shelfId = options.currentShelfId.value;
       await Promise.allSettled(
-        [...options.cachedIndices.value].map((index) =>
-          options.deleteContent(shelfId, index),
-        ),
+        [...options.cachedIndices.value].map((index) => options.deleteContent(shelfId, index)),
       );
     }
 

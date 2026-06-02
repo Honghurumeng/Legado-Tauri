@@ -26,13 +26,8 @@ const props = defineProps<{
 }>();
 
 const message = useMessage();
-const {
-  runSearch,
-  runBookInfo,
-  runChapterList,
-  runChapterContent,
-  runExplore,
-} = useScriptBridgeStore();
+const { runSearch, runBookInfo, runChapterList, runChapterContent, runExplore } =
+  useScriptBridgeStore();
 
 // ---- 调试状态 ----
 const debugSourceId = ref<string | null>(null);
@@ -86,9 +81,7 @@ const debugSourceOptions = computed(() =>
   })),
 );
 
-const debugSourceType = computed(
-  () => selectedDebugSource.value?.sourceType ?? "",
-);
+const debugSourceType = computed(() => selectedDebugSource.value?.sourceType ?? "");
 
 const debugSourceUrls = computed<{ label: string; value: string }[]>(() => {
   const src = selectedDebugSource.value;
@@ -119,9 +112,7 @@ const debugTargetUrl = computed(() => {
 const boaSearchResults = ref<BookItem[]>([]);
 const boaSearchJson = ref("");
 const boaBookInfo = ref<BookDetail | null>(null);
-const boaBookInfoLatest = computed(() =>
-  getLatestChapterText(boaBookInfo.value),
-);
+const boaBookInfoLatest = computed(() => getLatestChapterText(boaBookInfo.value));
 const boaBookInfoMetaLine = computed(() => getBookMetaLine(boaBookInfo.value));
 const boaBookInfoJson = ref("");
 const boaChapters = ref<ChapterItem[]>([]);
@@ -177,10 +168,7 @@ async function ensureBrowserProbeSession() {
     width: browserProbeWidth.value,
     height: browserProbeHeight.value,
   });
-  if (
-    browserProbeSessionId.value &&
-    browserProbeSessionSignature.value === signature
-  ) {
+  if (browserProbeSessionId.value && browserProbeSessionSignature.value === signature) {
     return browserProbeSessionId.value;
   }
   if (browserProbeSessionId.value) {
@@ -310,12 +298,13 @@ async function runBoaChapterListTest() {
     message.warning("请输入书籍 URL");
     return;
   }
+  const tocUrl = boaBookInfo.value?.tocUrl || debugBookUrl.value.trim();
   debugLoading.value = true;
   resetDebugResult();
   try {
     const raw = await runChapterList(
       selectedDebugSource.value?.fileName ?? "",
-      debugBookUrl.value.trim(),
+      tocUrl,
       undefined,
       selectedDebugSource.value?.sourceDir ?? "",
     );
@@ -385,9 +374,7 @@ async function runBoaExploreGetAll() {
       selectedDebugSource.value?.sourceDir ?? "",
     );
     if (Array.isArray(raw)) {
-      boaExploreCategories.value = raw.filter(
-        (v): v is string => typeof v === "string",
-      );
+      boaExploreCategories.value = raw.filter((v): v is string => typeof v === "string");
     }
     boaExploreJson.value = JSON.stringify(raw, null, 2);
     debugResultStatus.value = "ok";
@@ -438,11 +425,13 @@ function debugFillChapterUrl(ch: ChapterItem) {
 const debugShowDrawer = ref(false);
 const debugDrawerBookUrl = ref("");
 const debugDrawerFileName = ref("");
+const debugDrawerSourceDir = ref("");
 
 const debugShowReader = ref(false);
 const debugReaderChapterUrl = ref("");
 const debugReaderChapterName = ref("");
 const debugReaderFileName = ref("");
+const debugReaderSourceDir = ref("");
 const debugReaderChapters = ref<ChapterItem[]>([]);
 const debugReaderCurrentIndex = ref(0);
 const debugReaderBookInfo = ref<ReaderBookInfo | undefined>();
@@ -456,6 +445,7 @@ function debugOpenDetail(book: BookItem) {
   debugBookUrl.value = book.bookUrl;
   debugDrawerBookUrl.value = book.bookUrl;
   debugDrawerFileName.value = selectedDebugSource.value?.fileName ?? "";
+  debugDrawerSourceDir.value = selectedDebugSource.value?.sourceDir ?? "";
   debugShowDrawer.value = true;
 }
 
@@ -464,28 +454,34 @@ async function debugReadChapter(payload: {
   chapterName: string;
   index: number;
   bookInfo: ReaderBookInfo;
+  sourceDir?: string;
+  tocUrl?: string;
   chapterGroups?: ChapterGroup[];
   activeGroupIndex?: number;
 }) {
   debugReaderChapterUrl.value = payload.chapterUrl;
   debugReaderChapterName.value = payload.chapterName;
   debugReaderFileName.value = debugDrawerFileName.value;
+  debugReaderSourceDir.value =
+    payload.sourceDir ?? payload.bookInfo.sourceDir ?? debugDrawerSourceDir.value;
   debugReaderCurrentIndex.value = payload.index;
-  debugReaderBookInfo.value = payload.bookInfo;
+  debugReaderBookInfo.value = {
+    ...payload.bookInfo,
+    sourceDir: debugReaderSourceDir.value || payload.bookInfo.sourceDir,
+  };
   debugReaderChapterGroups.value = payload.chapterGroups;
   debugReaderActiveGroupIndex.value = payload.activeGroupIndex;
 
   if (!debugReaderChapters.value.length) {
     try {
+      const tocUrl = payload.tocUrl ?? boaBookInfo.value?.tocUrl ?? debugDrawerBookUrl.value;
       const raw = await runChapterList(
         debugDrawerFileName.value,
-        debugDrawerBookUrl.value,
+        tocUrl,
         undefined,
-        selectedDebugSource.value?.sourceDir,
+        debugReaderSourceDir.value || selectedDebugSource.value?.sourceDir,
       );
-      debugReaderChapters.value = Array.isArray(raw)
-        ? (raw as ChapterItem[])
-        : [];
+      debugReaderChapters.value = Array.isArray(raw) ? (raw as ChapterItem[]) : [];
     } catch {
       /* ignore */
     }
@@ -709,20 +705,9 @@ defineExpose({ setDebugSource });
       <div class="bv-debug__result">
         <div class="bv-debug__result-header">
           <span>响应结果</span>
-          <n-tag v-if="debugResultStatus === 'ok'" type="success" size="tiny"
-            >成功</n-tag
-          >
-          <n-tag
-            v-else-if="debugResultStatus === 'error'"
-            type="error"
-            size="tiny"
-            >失败</n-tag
-          >
-          <n-tag
-            v-if="debugMode !== 'idle' && debugMode !== 'text'"
-            size="tiny"
-            :bordered="false"
-          >
+          <n-tag v-if="debugResultStatus === 'ok'" type="success" size="tiny">成功</n-tag>
+          <n-tag v-else-if="debugResultStatus === 'error'" type="error" size="tiny">失败</n-tag>
+          <n-tag v-if="debugMode !== 'idle' && debugMode !== 'text'" size="tiny" :bordered="false">
             {{
               {
                 search: "搜索",
@@ -733,18 +718,8 @@ defineExpose({ setDebugSource });
               }[debugMode]
             }}
           </n-tag>
-          <div
-            style="
-              margin-left: auto;
-              display: flex;
-              align-items: center;
-              gap: 6px;
-            "
-          >
-            <n-button-group
-              v-if="debugMode !== 'idle' && debugMode !== 'text'"
-              size="tiny"
-            >
+          <div style="margin-left: auto; display: flex; align-items: center; gap: 6px">
+            <n-button-group v-if="debugMode !== 'idle' && debugMode !== 'text'" size="tiny">
               <n-button
                 :type="debugViewMode === 'preview' ? 'primary' : 'default'"
                 :ghost="debugViewMode === 'preview'"
@@ -758,11 +733,7 @@ defineExpose({ setDebugSource });
                 >原始数据</n-button
               >
             </n-button-group>
-            <n-button
-              v-if="debugResult"
-              size="tiny"
-              quaternary
-              @click="resetDebugResult()"
+            <n-button v-if="debugResult" size="tiny" quaternary @click="resetDebugResult()"
               >清空</n-button
             >
           </div>
@@ -774,44 +745,27 @@ defineExpose({ setDebugSource });
             Cookie：{{ browserProbeCookies.map((c) => c.name).join(", ") }}
           </div>
         </div>
-        <n-spin
-          :show="debugLoading || boaExploreBooksLoading"
-          style="height: 100%; overflow: auto"
-        >
-          <div
-            v-if="debugMode === 'idle' && !debugLoading"
-            class="bv-debug__placeholder"
-          >
+        <n-spin :show="debugLoading || boaExploreBooksLoading" style="height: 100%; overflow: auto">
+          <div v-if="debugMode === 'idle' && !debugLoading" class="bv-debug__placeholder">
             运行测试后，结果将显示在这里
           </div>
           <template v-else>
             <pre
               class="bv-debug__pre"
               :class="{
-                'bv-debug__pre--short':
-                  debugMode !== 'text' && debugMode !== 'idle',
+                'bv-debug__pre--short': debugMode !== 'text' && debugMode !== 'idle',
               }"
               >{{ debugResult }}</pre
             >
 
-            <template
-              v-if="
-                debugViewMode === 'raw' && debugMode !== 'text' && debugRawJson
-              "
-            >
-              <pre class="bv-debug__pre" style="flex: 1">{{
-                debugRawJson
-              }}</pre>
+            <template v-if="debugViewMode === 'raw' && debugMode !== 'text' && debugRawJson">
+              <pre class="bv-debug__pre" style="flex: 1">{{ debugRawJson }}</pre>
             </template>
 
             <template v-else-if="debugViewMode === 'preview'">
-              <template
-                v-if="debugMode === 'search' && boaSearchResults.length"
-              >
+              <template v-if="debugMode === 'search' && boaSearchResults.length">
                 <div class="bv-debug__cards">
-                  <div class="bv-debug__cards-hint">
-                    点击卡片查看详情并自动填充 Book URL
-                  </div>
+                  <div class="bv-debug__cards-hint">点击卡片查看详情并自动填充 Book URL</div>
                   <div class="bv-debug__cards-grid">
                     <BookCard
                       v-for="book in boaSearchResults"
@@ -841,25 +795,16 @@ defineExpose({ setDebugSource });
                       <div class="bv-debug__book-author">
                         {{ boaBookInfo.author }}
                       </div>
-                      <n-tag
-                        v-if="boaBookInfo.kind"
-                        size="tiny"
-                        :bordered="false"
-                        >{{ boaBookInfo.kind }}</n-tag
-                      >
-                      <n-tag
-                        v-if="boaBookInfo.status"
-                        size="tiny"
-                        :bordered="false"
-                        >{{ boaBookInfo.status }}</n-tag
-                      >
+                      <n-tag v-if="boaBookInfo.kind" size="tiny" :bordered="false">{{
+                        boaBookInfo.kind
+                      }}</n-tag>
+                      <n-tag v-if="boaBookInfo.status" size="tiny" :bordered="false">{{
+                        boaBookInfo.status
+                      }}</n-tag>
                       <div v-if="boaBookInfoLatest" class="bv-debug__book-last">
                         最新: {{ boaBookInfoLatest }}
                       </div>
-                      <div
-                        v-if="boaBookInfoMetaLine.length"
-                        class="bv-debug__book-last"
-                      >
+                      <div v-if="boaBookInfoMetaLine.length" class="bv-debug__book-last">
                         {{ boaBookInfoMetaLine.join(" · ") }}
                       </div>
                     </div>
@@ -870,32 +815,22 @@ defineExpose({ setDebugSource });
                 </div>
               </template>
 
-              <template
-                v-if="debugMode === 'chapterList' && boaChapters.length"
-              >
+              <template v-if="debugMode === 'chapterList' && boaChapters.length">
                 <div class="bv-debug__chapters">
-                  <div class="bv-debug__cards-hint">
-                    点击章节自动填充 Chapter URL
-                  </div>
+                  <div class="bv-debug__cards-hint">点击章节自动填充 Chapter URL</div>
                   <div class="bv-debug__chapter-list">
                     <div
                       v-for="(ch, i) in boaChapters"
                       :key="ch.url"
                       class="bv-debug__chapter-item"
                       :class="{
-                        'bv-debug__chapter-item--active':
-                          ch.url === debugChapterUrl,
+                        'bv-debug__chapter-item--active': ch.url === debugChapterUrl,
                       }"
                       @click="debugFillChapterUrl(ch)"
                     >
                       <span class="bv-debug__chapter-idx">{{ i + 1 }}</span>
                       <span class="bv-debug__chapter-name">{{ ch.name }}</span>
-                      <n-tag
-                        v-if="isVipChapter(ch)"
-                        size="tiny"
-                        :bordered="false"
-                        type="warning"
-                      >
+                      <n-tag v-if="isVipChapter(ch)" size="tiny" :bordered="false" type="warning">
                         VIP
                       </n-tag>
                     </div>
@@ -911,9 +846,7 @@ defineExpose({ setDebugSource });
 
               <template v-if="debugMode === 'explore'">
                 <div v-if="boaExploreBooks.length" class="bv-debug__cards">
-                  <div class="bv-debug__cards-hint">
-                    点击卡片查看详情并自动填充 Book URL
-                  </div>
+                  <div class="bv-debug__cards-hint">点击卡片查看详情并自动填充 Book URL</div>
                   <div class="bv-debug__cards-grid">
                     <BookCard
                       v-for="book in boaExploreBooks"
@@ -925,9 +858,7 @@ defineExpose({ setDebugSource });
                   </div>
                 </div>
                 <div
-                  v-else-if="
-                    boaExploreActiveCategory && !boaExploreBooksLoading
-                  "
+                  v-else-if="boaExploreActiveCategory && !boaExploreBooksLoading"
                   class="bv-debug__placeholder"
                   style="padding: 24px"
                 >
@@ -946,9 +877,13 @@ defineExpose({ setDebugSource });
     v-model:show="debugShowDrawer"
     :book-url="debugDrawerBookUrl"
     :file-name="debugDrawerFileName"
+    :source-dir="debugDrawerSourceDir"
     :source-name="
-      sources.find((s) => s.fileName === debugDrawerFileName)?.name ??
-      debugDrawerFileName
+      sources.find(
+        (s) =>
+          s.fileName === debugDrawerFileName &&
+          (!debugDrawerSourceDir || s.sourceDir === debugDrawerSourceDir),
+      )?.name ?? debugDrawerFileName
     "
     @read-chapter="debugReadChapter"
   />
@@ -958,6 +893,7 @@ defineExpose({ setDebugSource });
     :chapter-url="debugReaderChapterUrl"
     :chapter-name="debugReaderChapterName"
     :file-name="debugReaderFileName"
+    :source-dir="debugReaderSourceDir"
     :chapters="debugReaderChapters"
     :book-info="debugReaderBookInfo"
     :chapter-groups="debugReaderChapterGroups"

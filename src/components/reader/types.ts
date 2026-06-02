@@ -16,6 +16,7 @@ export interface ReaderBookInfo {
   bookUrl?: string;
   sourceName?: string;
   fileName?: string;
+  sourceDir?: string;
   lastChapter?: string;
   latestChapter?: string;
   latestChapterUrl?: string;
@@ -311,6 +312,7 @@ export interface WholeBookSwitchedPayload {
 export interface TemporaryChapterSourceOverride {
   chapterIndex: number;
   fileName: string;
+  sourceDir?: string;
   sourceName: string;
   sourceBookUrl: string;
   chapterUrl: string;

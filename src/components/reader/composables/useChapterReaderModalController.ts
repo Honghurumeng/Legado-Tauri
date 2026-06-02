@@ -48,6 +48,7 @@ export interface ChapterReaderModalProps {
   chapterUrl: string;
   chapterName: string;
   fileName: string;
+  sourceDir?: string;
   chapters: ChapterItem[];
   currentIndex: number;
   shelfBookId?: string;
@@ -58,10 +59,7 @@ export interface ChapterReaderModalProps {
   initialGroupIndex?: number;
   inlineGroupTabs?: boolean;
   /** 各集播放进度地图（key = chapter URL） */
-  episodeProgress?: Record<
-    string,
-    { time: number; duration: number; lastPlayedAt: number }
-  >;
+  episodeProgress?: Record<string, { time: number; duration: number; lastPlayedAt: number }>;
   /** 书架视频模式下保存单集播放进度的回调 */
   saveEpisodeProgress?: (
     shelfId: string,
@@ -79,9 +77,7 @@ export interface ChapterReaderModalEmit {
   (e: "source-switched", payload: WholeBookSwitchedPayload): void;
 }
 
-type ReaderNavigationController = ReturnType<
-  typeof createReaderNavigationController
->;
+type ReaderNavigationController = ReturnType<typeof createReaderNavigationController>;
 
 export function useChapterReaderModalController(
   props: Readonly<ChapterReaderModalProps>,
@@ -182,6 +178,7 @@ export function useChapterReaderModalController(
   const chapterName = computed(() => props.chapterName);
   const chapterUrl = computed(() => props.chapterUrl);
   const fileName = computed(() => props.fileName);
+  const sourceDir = computed(() => props.sourceDir);
   const chapters = computed(() => props.chapters);
   const bookInfo = computed(() => props.bookInfo);
 
@@ -246,9 +243,7 @@ export function useChapterReaderModalController(
     return readingChapterIndex.value;
   });
   const readingChapter = computed(() => getChapter(readingChapterIndex.value));
-  const readingChapterUrl = computed(
-    () => readingChapter.value?.url ?? currentChapterUrl.value,
-  );
+  const readingChapterUrl = computed(() => readingChapter.value?.url ?? currentChapterUrl.value);
 
   function buildReaderContentPayload(
     stage: Parameters<typeof runReaderContentPipeline>[0],
@@ -267,21 +262,20 @@ export function useChapterReaderModalController(
     };
   }
 
-  async function resolveSourceCapabilities(sourceFileName: string) {
+  async function resolveSourceCapabilities(
+    sourceFileName: string,
+    targetSourceDir = sourceDir.value,
+  ) {
     await bookSourceStore.ensureCapsLoaded();
     return (
-      bookSourceStore.getCachedCapabilities(sourceFileName) ??
-      (await bookSourceStore.detectCapabilities(sourceFileName))
+      bookSourceStore.getCachedCapabilities(sourceFileName, targetSourceDir) ??
+      (await bookSourceStore.detectCapabilities(sourceFileName, targetSourceDir))
     );
   }
 
-  function confirmVipChapterPurchase(
-    chapter: ChapterItem,
-    loadError: unknown,
-  ): Promise<boolean> {
+  function confirmVipChapterPurchase(chapter: ChapterItem, loadError: unknown): Promise<boolean> {
     const price = getChapterPriceLabel(chapter);
-    const reason =
-      loadError instanceof Error ? loadError.message : String(loadError);
+    const reason = loadError instanceof Error ? loadError.message : String(loadError);
     const content = [
       `“${chapter.name}” 是 VIP 章节。`,
       price ? `价格：${price}` : "",
@@ -307,25 +301,17 @@ export function useChapterReaderModalController(
         maskClosable: false,
         onPositiveClick: async () => {
           try {
-            const result = await runPurchaseChapter(
-              fileName.value,
-              chapter.url,
-              chapter,
-            );
+            const result = await runPurchaseChapter(fileName.value, chapter.url, chapter);
             if (!isPurchaseResultOk(result)) {
               const msg = getPurchaseResultMessage(result) || "购买失败";
               message.error(msg);
               settle(false);
               return;
             }
-            message.success(
-              getPurchaseResultMessage(result) || "购买成功，正在重新加载",
-            );
+            message.success(getPurchaseResultMessage(result) || "购买成功，正在重新加载");
             settle(true);
           } catch (error: unknown) {
-            message.error(
-              `购买失败: ${error instanceof Error ? error.message : String(error)}`,
-            );
+            message.error(`购买失败: ${error instanceof Error ? error.message : String(error)}`);
             settle(false);
           }
         },
@@ -339,17 +325,12 @@ export function useChapterReaderModalController(
     });
   }
 
-  async function requestVipChapterPurchase(
-    index: number,
-    loadError: unknown,
-  ): Promise<boolean> {
+  async function requestVipChapterPurchase(index: number, loadError: unknown): Promise<boolean> {
     const chapter = getChapter(index);
     if (!chapter || !isVipChapter(chapter)) {
       return false;
     }
-    const capabilities = await resolveSourceCapabilities(fileName.value).catch(
-      () => new Set(),
-    );
+    const capabilities = await resolveSourceCapabilities(fileName.value).catch(() => new Set());
     if (!capabilities.has("purchaseChapter")) {
       return false;
     }
@@ -435,6 +416,7 @@ export function useChapterReaderModalController(
     invalidatePages,
   } = useReaderContentState({
     fileName,
+    sourceDir,
     sourceType,
     currentShelfId,
     activeChapterIndex,
@@ -470,12 +452,8 @@ export function useChapterReaderModalController(
       if (isPagedMode.value) {
         await openChapter(activeChapterIndex.value, {
           position: "resume",
-          pageIndex:
-            currentPageIndex.value >= 0 ? currentPageIndex.value : undefined,
-          pageRatio:
-            currentScrollRatio.value >= 0
-              ? currentScrollRatio.value
-              : undefined,
+          pageIndex: currentPageIndex.value >= 0 ? currentPageIndex.value : undefined,
+          pageRatio: currentScrollRatio.value >= 0 ? currentScrollRatio.value : undefined,
         });
         return;
       }
@@ -594,18 +572,17 @@ export function useChapterReaderModalController(
     return isPagedMode.value ? "paged" : "scroll";
   });
 
-  const { readCurrentPosition, writeSnapshotToRefs, buildProgressPayload } =
-    useReaderPosition({
-      mode: positionMode,
-      currentPageIndex,
-      pagedPageIndex,
-      currentScrollRatio,
-      pagedModeRef,
-      scrollModeRef,
-      comicModeRef,
-      getPlaybackTime,
-      getSettingsJson,
-    });
+  const { readCurrentPosition, writeSnapshotToRefs, buildProgressPayload } = useReaderPosition({
+    mode: positionMode,
+    currentPageIndex,
+    pagedPageIndex,
+    currentScrollRatio,
+    pagedModeRef,
+    scrollModeRef,
+    comicModeRef,
+    getPlaybackTime,
+    getSettingsJson,
+  });
 
   function clampChapterIndex(index: number): number {
     if (!chapters.value.length) {
@@ -614,22 +591,15 @@ export function useChapterReaderModalController(
     return Math.min(Math.max(index, 0), chapters.value.length - 1);
   }
 
-  function resolveReadingProgressTarget(
-    snapshot = readCurrentPosition(),
-  ): ReaderProgressTarget {
-    const chapterIndex = clampChapterIndex(
-      activeChapterIndex.value + snapshot.chapterOffset,
-    );
+  function resolveReadingProgressTarget(snapshot = readCurrentPosition()): ReaderProgressTarget {
+    const chapterIndex = clampChapterIndex(activeChapterIndex.value + snapshot.chapterOffset);
     const chapter = getChapter(chapterIndex);
     const isActiveChapter = chapterIndex === activeChapterIndex.value;
     return {
       chapterIndex,
       chapterName:
-        chapter?.name ??
-        (isActiveChapter ? currentChapterName.value : chapterName.value),
-      chapterUrl:
-        chapter?.url ??
-        (isActiveChapter ? currentChapterUrl.value : chapterUrl.value),
+        chapter?.name ?? (isActiveChapter ? currentChapterName.value : chapterName.value),
+      chapterUrl: chapter?.url ?? (isActiveChapter ? currentChapterUrl.value : chapterUrl.value),
       position: snapshot,
     };
   }
@@ -686,55 +656,53 @@ export function useChapterReaderModalController(
     message,
   });
 
-  const { openChapter, openLinearChapter, openPagedChapter } =
-    useReaderChapterOpen({
-      getShow: () => props.show,
-      getChapterCount: () => props.chapters.length,
-      getShelfDataReady: () => shelfDataReady,
-      getChapter,
-      isPagedMode,
-      isComicMode,
-      isScrollMode,
-      isVideoMode,
-      activeChapterIndex,
-      content,
-      error,
-      loading,
-      pagedLoading,
-      currentPageIndex,
-      currentScrollRatio,
-      pendingRestorePageIndex,
-      pendingRestoreScrollRatio,
-      pendingResumePlaybackTime,
-      openingChapter,
-      restoringPosition,
-      navDirection,
-      currentShelfId,
-      pagedCache,
-      scrollModeRef,
-      comicModeRef,
-      fetchProcessedChapterText,
-      ensureParagraphCommentSummaries,
-      setPagedPage,
-      markChapterRead,
-      updateReaderSession,
-      buildReaderSessionSnapshot,
-      getPositionMode: () => positionMode.value,
-      writePositionSnapshot: writeSnapshotToRefs,
-      buildProgressPayload,
-      updateProgress,
-      waitForLinearSeamlessWindowStable: (index) =>
-        waitForLinearSeamlessWindowStable(index),
-      requestVipChapterPurchase,
-      reportLoadError: (loadError) => {
-        message.error(`加载正文失败: ${loadError}`, {
-          duration: 8000,
-          closable: true,
-        });
-      },
-      clearChapterRuntimeCache,
-      clearRepaginateWork: () => clearRepaginateWork(),
-    });
+  const { openChapter, openLinearChapter, openPagedChapter } = useReaderChapterOpen({
+    getShow: () => props.show,
+    getChapterCount: () => props.chapters.length,
+    getShelfDataReady: () => shelfDataReady,
+    getChapter,
+    isPagedMode,
+    isComicMode,
+    isScrollMode,
+    isVideoMode,
+    activeChapterIndex,
+    content,
+    error,
+    loading,
+    pagedLoading,
+    currentPageIndex,
+    currentScrollRatio,
+    pendingRestorePageIndex,
+    pendingRestoreScrollRatio,
+    pendingResumePlaybackTime,
+    openingChapter,
+    restoringPosition,
+    navDirection,
+    currentShelfId,
+    pagedCache,
+    scrollModeRef,
+    comicModeRef,
+    fetchProcessedChapterText,
+    ensureParagraphCommentSummaries,
+    setPagedPage,
+    markChapterRead,
+    updateReaderSession,
+    buildReaderSessionSnapshot,
+    getPositionMode: () => positionMode.value,
+    writePositionSnapshot: writeSnapshotToRefs,
+    buildProgressPayload,
+    updateProgress,
+    waitForLinearSeamlessWindowStable: (index) => waitForLinearSeamlessWindowStable(index),
+    requestVipChapterPurchase,
+    reportLoadError: (loadError) => {
+      message.error(`加载正文失败: ${loadError}`, {
+        duration: 8000,
+        closable: true,
+      });
+    },
+    clearChapterRuntimeCache,
+    clearRepaginateWork: () => clearRepaginateWork(),
+  });
 
   function retryCurrentChapter() {
     void openChapter(activeChapterIndex.value, { forceNetwork: true });
@@ -743,6 +711,7 @@ export function useChapterReaderModalController(
   const readerPrefetch = createReaderPrefetchController({
     currentShelfId,
     getFileName: () => fileName.value,
+    getSourceDir: () => sourceDir.value,
     message,
     getBookUrl: () => bookInfo.value?.bookUrl ?? "",
     getBookName: () => bookInfo.value?.name ?? "",
@@ -869,26 +838,25 @@ export function useChapterReaderModalController(
     () => isScrollMode.value && loading.value && !content.value,
   );
 
-  const { ttsProgressText, ttsScrollHighlightIdx, onTtsToggle } =
-    useReaderTtsManager({
-      activeChapterIndex,
-      content,
-      isPagedMode,
-      isScrollMode,
-      isComicMode,
-      isVideoMode,
-      pagedPageIndex,
-      activePagedPages,
-      hasPrev,
-      hasNext,
-      pagedModeRef,
-      scrollModeRef,
-      blockingLoading,
-      showTtsBar,
-      setPagedPage,
-      fetchRawChapterText,
-      gotoNextChapter,
-    });
+  const { ttsProgressText, ttsScrollHighlightIdx, onTtsToggle } = useReaderTtsManager({
+    activeChapterIndex,
+    content,
+    isPagedMode,
+    isScrollMode,
+    isComicMode,
+    isVideoMode,
+    pagedPageIndex,
+    activePagedPages,
+    hasPrev,
+    hasNext,
+    pagedModeRef,
+    scrollModeRef,
+    blockingLoading,
+    showTtsBar,
+    setPagedPage,
+    fetchRawChapterText,
+    gotoNextChapter,
+  });
 
   const host = useReaderModalHost({
     message,
@@ -904,6 +872,7 @@ export function useChapterReaderModalController(
     getChapterName: () => props.chapterName,
     getChapterUrl: () => props.chapterUrl,
     getFileName: () => props.fileName,
+    getSourceDir: () => props.sourceDir,
     getSourceType: () => props.sourceType,
     getRefreshingToc: () => props.refreshingToc,
     getBookInfo: () => props.bookInfo,

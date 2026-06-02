@@ -28,7 +28,7 @@ import { safeRandomUUID } from "@/utils/uuid";
 
 // ── 书源能力存储键（继承自 useSourceCapabilities）────────────────────────
 const STORAGE_NAMESPACE = "source.capabilities";
-/** 能力缓存条目前缀：cap_{fileName} → 逗号分隔函数名列表 */
+/** 能力缓存条目前缀：cap_{sourceKey} → 逗号分隔函数名列表 */
 const CAP_KEY_PREFIX = "cap_";
 
 // ── 书源更新检查 ─────────────────────────────────────────────────────────
@@ -95,6 +95,15 @@ function isStreamingListUnsupported(error: unknown): boolean {
   );
 }
 
+function getSourceCacheKey(source: BookSourceMeta): string {
+  return source.sourceKey || `${source.sourceDir}::${source.fileName}`;
+}
+
+function isNovelSource(source: BookSourceMeta): boolean {
+  const type = (source.sourceType || "novel").trim().toLowerCase();
+  return type === "" || type === "novel" || type === "小说";
+}
+
 export const useBookSourceStore = defineStore("bookSource", () => {
   // ── 书源列表状态 ─────────────────────────────────────────────────────
   const sources = ref<BookSourceMeta[]>([]);
@@ -126,25 +135,23 @@ export const useBookSourceStore = defineStore("bookSource", () => {
   const explorableSources = computed(() =>
     enabledSources.value.filter(
       (s) =>
-        (s.sourceType === "webpage" ||
-          s.hasExplore === true ||
-          fnsCache[s.fileName]?.has("explore")) &&
-        !exploreDisabled.value.has(s.fileName),
+        isNovelSource(s) &&
+        (s.hasExplore === true || fnsCache[getSourceCacheKey(s)]?.has("explore")) &&
+        isExploreUserEnabled(getSourceCacheKey(s)),
     ),
   );
 
   const searchableSources = computed(() =>
     enabledSources.value.filter(
       (s) =>
-        s.sourceType !== "webpage" &&
-        fnsCache[s.fileName]?.has("search") &&
-        !searchDisabled.value.has(s.fileName),
+        isNovelSource(s) &&
+        fnsCache[getSourceCacheKey(s)]?.has("search") &&
+        isSearchUserEnabled(getSourceCacheKey(s)),
     ),
   );
 
   const getSourceByFileName = computed(
-    () => (fileName: string) =>
-      sources.value.find((s) => s.fileName === fileName),
+    () => (fileName: string) => sources.value.find((s) => s.fileName === fileName),
   );
 
   // ── Actions ──────────────────────────────────────────────────────────
@@ -155,28 +162,26 @@ export const useBookSourceStore = defineStore("bookSource", () => {
    * - 已删除项：从数组中移除
    */
   function applySourcesBatch(next: BookSourceMeta[]): void {
-    const nextByFileName = new Map(next.map((s) => [s.fileName, s]));
-    const currentByFileName = new Map(
-      sources.value.map((s) => [s.fileName, s]),
-    );
+    const nextByKey = new Map(next.map((s) => [getSourceCacheKey(s), s]));
+    const currentByKey = new Map(sources.value.map((s) => [getSourceCacheKey(s), s]));
 
     // 移除已删除的项（逆序遍历避免索引偏移）
     for (let i = sources.value.length - 1; i >= 0; i--) {
-      if (!nextByFileName.has(sources.value[i].fileName)) {
+      if (!nextByKey.has(getSourceCacheKey(sources.value[i]))) {
         sources.value.splice(i, 1);
       }
     }
 
     // 就地更新已有项
     for (let i = 0; i < sources.value.length; i++) {
-      const updated = nextByFileName.get(sources.value[i].fileName);
+      const updated = nextByKey.get(getSourceCacheKey(sources.value[i]));
       if (updated) {
         Object.assign(sources.value[i], updated);
       }
     }
 
     // 将新增项插入到列表顶部
-    const newItems = next.filter((s) => !currentByFileName.has(s.fileName));
+    const newItems = next.filter((s) => !currentByKey.has(getSourceCacheKey(s)));
     if (newItems.length > 0) {
       sources.value.unshift(...newItems);
     }
@@ -198,10 +203,7 @@ export const useBookSourceStore = defineStore("bookSource", () => {
         _streamRequestId = requestId;
 
         // 先并发获取目录信息
-        const [dir, dirs] = await Promise.all([
-          getBookSourceDir(),
-          getBookSourceDirs(),
-        ]);
+        const [dir, dirs] = await Promise.all([getBookSourceDir(), getBookSourceDirs()]);
         sourceDirs.value = [dir, ...dirs.filter((d) => d !== dir)];
 
         // 设置流式事件监听（必须在调用命令前注册，避免错过首批）
@@ -230,9 +232,7 @@ export const useBookSourceStore = defineStore("bookSource", () => {
 
             if (done) {
               // 全部到达后按名称排序后增量合并，不清空现有列表
-              applySourcesBatch(
-                freshItems.toSorted((a, b) => a.name.localeCompare(b.name)),
-              );
+              applySourcesBatch(freshItems.toSorted((a, b) => a.name.localeCompare(b.name)));
               unlisten();
               if (typeof error === "string" && error.length > 0) {
                 reject(new Error(error));
@@ -248,18 +248,14 @@ export const useBookSourceStore = defineStore("bookSource", () => {
               unlisten();
               listBookSources()
                 .then((items) => {
-                  const sorted = items.toSorted((a, b) =>
-                    a.name.localeCompare(b.name),
-                  );
+                  const sorted = items.toSorted((a, b) => a.name.localeCompare(b.name));
                   applySourcesBatch(sorted);
                   streamingLoaded.value = sources.value.length;
                   resolve();
                 })
                 .catch((fallbackErr: unknown) => {
                   reject(
-                    fallbackErr instanceof Error
-                      ? fallbackErr
-                      : new Error(String(fallbackErr)),
+                    fallbackErr instanceof Error ? fallbackErr : new Error(String(fallbackErr)),
                   );
                 });
               return;
@@ -271,9 +267,7 @@ export const useBookSourceStore = defineStore("bookSource", () => {
 
         // 加载完书源列表后自动触发能力检测与更新检查（非阻塞，后台跑）
         void detectAllCapabilities();
-        void ensureFrontendNamespaceLoaded(UPDATE_NS).then(() =>
-          checkUpdatesIfStale(),
-        );
+        void ensureFrontendNamespaceLoaded(UPDATE_NS).then(() => checkUpdatesIfStale());
       } finally {
         loading.value = false;
         _loadInFlight = null;
@@ -299,59 +293,86 @@ export const useBookSourceStore = defineStore("bookSource", () => {
       if (!key.startsWith(CAP_KEY_PREFIX)) {
         continue;
       }
-      const fn = key.slice(CAP_KEY_PREFIX.length);
-      if (!fnsCache[fn]) {
+      const sourceKey = key.slice(CAP_KEY_PREFIX.length);
+      if (!fnsCache[sourceKey]) {
         // 逐条写入 shallowReactive，每条只触发读了该 key 的 computed
-        fnsCache[fn] = new Set(val ? val.split(",").filter(Boolean) : []);
+        fnsCache[sourceKey] = new Set(val ? val.split(",").filter(Boolean) : []);
       }
     }
   }
 
+  function resolveSourceRef(
+    sourceOrKey: BookSourceMeta | string,
+    sourceDir?: string,
+  ): { fileName: string; sourceDir?: string; cacheKey: string } {
+    if (typeof sourceOrKey !== "string") {
+      return {
+        fileName: sourceOrKey.fileName,
+        sourceDir: sourceOrKey.sourceDir,
+        cacheKey: getSourceCacheKey(sourceOrKey),
+      };
+    }
+    const source = sources.value.find(
+      (item) =>
+        getSourceCacheKey(item) === sourceOrKey ||
+        (item.fileName === sourceOrKey &&
+          (sourceDir === undefined || item.sourceDir === sourceDir)),
+    );
+    if (source) {
+      return {
+        fileName: source.fileName,
+        sourceDir: source.sourceDir,
+        cacheKey: getSourceCacheKey(source),
+      };
+    }
+    return { fileName: sourceOrKey, cacheKey: sourceOrKey };
+  }
+
   /** 检测单个书源的函数能力（带缓存，结果持久化到存储） */
-  async function detectCapabilities(fileName: string): Promise<Set<string>> {
-    if (fnsCache[fileName]) {
-      return fnsCache[fileName];
+  async function detectCapabilities(
+    sourceOrKey: BookSourceMeta | string,
+    sourceDir?: string,
+  ): Promise<Set<string>> {
+    const sourceRef = resolveSourceRef(sourceOrKey, sourceDir);
+    if (fnsCache[sourceRef.cacheKey]) {
+      return fnsCache[sourceRef.cacheKey];
     }
     try {
-      const raw = await evalBookSource(fileName);
+      const raw = await evalBookSource(sourceRef.fileName, undefined, sourceRef.sourceDir);
       const fns = new Set(
         (raw ?? "")
           .split(",")
           .map((s) => s.trim())
           .filter(Boolean),
       );
-      // shallowReactive 直接赋值，只触发读了该 fileName key 的 computed
-      fnsCache[fileName] = fns;
+      // shallowReactive 直接赋值，只触发读了该 sourceKey 的 computed
+      fnsCache[sourceRef.cacheKey] = fns;
       const newVal = [...fns].join(",");
       const storedVal = getFrontendStorageItem(
         STORAGE_NAMESPACE,
-        CAP_KEY_PREFIX + fileName,
+        CAP_KEY_PREFIX + sourceRef.cacheKey,
       );
       if (storedVal !== newVal) {
-        setFrontendStorageItem(
-          STORAGE_NAMESPACE,
-          CAP_KEY_PREFIX + fileName,
-          newVal,
-        );
+        setFrontendStorageItem(STORAGE_NAMESPACE, CAP_KEY_PREFIX + sourceRef.cacheKey, newVal);
       }
       return fns;
     } catch {
       const empty = new Set<string>();
-      fnsCache[fileName] = empty;
+      fnsCache[sourceRef.cacheKey] = empty;
       return empty;
     }
   }
 
   /** 批量检测所有启用书源的能力（5 并发，重复调用复用同一 Promise）
-   * fnsCache 是 shallowReactive：每次 fnsCache[fileName]=fns 只通知
+   * fnsCache 是 shallowReactive：每次 fnsCache[sourceKey]=fns 只通知
    * 读了该 key 的 computed，实现逐条追加（buffer-append）而非整页刷新。
    */
   function detectAllCapabilities(): Promise<void> {
     if (_detectAllInFlight) {
       return _detectAllInFlight;
     }
-    const enabled = sources.value.filter((s) => s.enabled);
-    const pending = enabled.filter((src) => !fnsCache[src.fileName]);
+    const enabled = sources.value.filter((s) => s.enabled && isNovelSource(s));
+    const pending = enabled.filter((src) => !fnsCache[getSourceCacheKey(src)]);
     if (pending.length === 0) {
       return Promise.resolve();
     }
@@ -363,9 +384,10 @@ export const useBookSourceStore = defineStore("bookSource", () => {
           await Promise.all(
             pending.slice(i, i + CONCURRENCY).map(async (src) => {
               // 并发的单片检测已完成则复用（不重复 eval）
-              if (fnsCache[src.fileName]) return;
+              const cacheKey = getSourceCacheKey(src);
+              if (fnsCache[cacheKey]) return;
               try {
-                const raw = await evalBookSource(src.fileName);
+                const raw = await evalBookSource(src.fileName, undefined, src.sourceDir);
                 const fns = new Set(
                   (raw ?? "")
                     .split(",")
@@ -375,21 +397,17 @@ export const useBookSourceStore = defineStore("bookSource", () => {
                 const newVal = [...fns].join(",");
                 const storedVal = getFrontendStorageItem(
                   STORAGE_NAMESPACE,
-                  CAP_KEY_PREFIX + src.fileName,
+                  CAP_KEY_PREFIX + cacheKey,
                 );
                 if (storedVal !== newVal) {
-                  setFrontendStorageItem(
-                    STORAGE_NAMESPACE,
-                    CAP_KEY_PREFIX + src.fileName,
-                    newVal,
-                  );
+                  setFrontendStorageItem(STORAGE_NAMESPACE, CAP_KEY_PREFIX + cacheKey, newVal);
                 }
-                // 直接写入 shallowReactive：只通知依赖了 src.fileName 这条 key
+                // 直接写入 shallowReactive：只通知依赖了 sourceKey 这条 key
                 // 的 computed（如 explorableSources / searchableSources），
                 // 该书源对应的 tab 单独追加，其他 tab 不受影响。
-                fnsCache[src.fileName] = fns;
+                fnsCache[cacheKey] = fns;
               } catch {
-                fnsCache[src.fileName] = new Set<string>();
+                fnsCache[cacheKey] = new Set<string>();
               }
             }),
           );
@@ -405,10 +423,20 @@ export const useBookSourceStore = defineStore("bookSource", () => {
   }
 
   /** 使单个书源的能力缓存失效（同时删除持久化条目） */
-  function invalidateCapability(fileName: string) {
-    // eslint-disable-next-line @typescript-eslint/no-dynamic-delete
-    delete fnsCache[fileName];
-    removeFrontendStorageItem(STORAGE_NAMESPACE, CAP_KEY_PREFIX + fileName);
+  function invalidateCapability(sourceKeyOrFileName: string) {
+    const matchingKeys = sources.value
+      .filter(
+        (source) =>
+          getSourceCacheKey(source) === sourceKeyOrFileName ||
+          source.fileName === sourceKeyOrFileName,
+      )
+      .map(getSourceCacheKey);
+    const keys = matchingKeys.length ? matchingKeys : [sourceKeyOrFileName];
+    for (const key of keys) {
+      // eslint-disable-next-line @typescript-eslint/no-dynamic-delete
+      delete fnsCache[key];
+      removeFrontendStorageItem(STORAGE_NAMESPACE, CAP_KEY_PREFIX + key);
+    }
   }
 
   /** 清空全部能力缓存（同时删除所有持久化条目） */
@@ -426,8 +454,12 @@ export const useBookSourceStore = defineStore("bookSource", () => {
   }
 
   /** 获取书源已缓存的能力集合（未检测则返回 undefined） */
-  function getCachedCapabilities(fileName: string): Set<string> | undefined {
-    return fnsCache[fileName];
+  function getCachedCapabilities(
+    sourceOrKey: BookSourceMeta | string,
+    sourceDir?: string,
+  ): Set<string> | undefined {
+    const sourceRef = resolveSourceRef(sourceOrKey, sourceDir);
+    return fnsCache[sourceRef.cacheKey] ?? fnsCache[sourceRef.fileName];
   }
 
   /** 切换书源启用/禁用状态（包含 API 调用 + 本地状态同步）*/
@@ -437,7 +469,9 @@ export const useBookSourceStore = defineStore("bookSource", () => {
     sourceDir?: string,
   ): Promise<void> {
     await toggleBookSource(fileName, enabled, sourceDir);
-    const src = sources.value.find((s) => s.fileName === fileName);
+    const src = sources.value.find(
+      (s) => s.fileName === fileName && (sourceDir === undefined || s.sourceDir === sourceDir),
+    );
     if (src) {
       src.enabled = enabled;
     }
@@ -445,31 +479,42 @@ export const useBookSourceStore = defineStore("bookSource", () => {
 
   // ── 用户开关（探索/搜索）────────────────────────────────────────────
 
-  function isExploreUserEnabled(fileName: string): boolean {
-    return !exploreDisabled.value.has(fileName);
+  function isExploreUserEnabled(sourceKeyOrFileName: string): boolean {
+    const sourceRef = resolveSourceRef(sourceKeyOrFileName);
+    return (
+      !exploreDisabled.value.has(sourceRef.cacheKey) &&
+      !exploreDisabled.value.has(sourceRef.fileName)
+    );
   }
 
-  function setExploreUserEnabled(fileName: string, enabled: boolean) {
+  function setExploreUserEnabled(sourceKeyOrFileName: string, enabled: boolean) {
+    const sourceRef = resolveSourceRef(sourceKeyOrFileName);
     const newSet = new Set(exploreDisabled.value);
     if (enabled) {
-      newSet.delete(fileName);
+      newSet.delete(sourceRef.cacheKey);
+      newSet.delete(sourceRef.fileName);
     } else {
-      newSet.add(fileName);
+      newSet.add(sourceRef.cacheKey);
     }
     exploreDisabled.value = newSet;
     saveDisabledSet(LS_EXPLORE_KEY, newSet);
   }
 
-  function isSearchUserEnabled(fileName: string): boolean {
-    return !searchDisabled.value.has(fileName);
+  function isSearchUserEnabled(sourceKeyOrFileName: string): boolean {
+    const sourceRef = resolveSourceRef(sourceKeyOrFileName);
+    return (
+      !searchDisabled.value.has(sourceRef.cacheKey) && !searchDisabled.value.has(sourceRef.fileName)
+    );
   }
 
-  function setSearchUserEnabled(fileName: string, enabled: boolean) {
+  function setSearchUserEnabled(sourceKeyOrFileName: string, enabled: boolean) {
+    const sourceRef = resolveSourceRef(sourceKeyOrFileName);
     const newSet = new Set(searchDisabled.value);
     if (enabled) {
-      newSet.delete(fileName);
+      newSet.delete(sourceRef.cacheKey);
+      newSet.delete(sourceRef.fileName);
     } else {
-      newSet.add(fileName);
+      newSet.add(sourceRef.cacheKey);
     }
     searchDisabled.value = newSet;
     saveDisabledSet(LS_SEARCH_KEY, newSet);
@@ -490,10 +535,7 @@ export const useBookSourceStore = defineStore("bookSource", () => {
       updatesCheckedAt,
       Number.isNaN(lastChecked) ? 0 : lastChecked,
     );
-    if (
-      pendingUpdates.value.length > 0 &&
-      now - effectiveLastChecked < MIN_CHECK_INTERVAL_MS
-    ) {
+    if (pendingUpdates.value.length > 0 && now - effectiveLastChecked < MIN_CHECK_INTERVAL_MS) {
       return;
     }
 
@@ -530,13 +572,9 @@ export const useBookSourceStore = defineStore("bookSource", () => {
     await applyBookSourceUpdate(fileName);
     const source = sources.value.find((item) => item.fileName === fileName);
     if (source) {
-      pendingUpdates.value = pendingUpdates.value.filter(
-        (item) => item.uuid !== source.uuid,
-      );
+      pendingUpdates.value = pendingUpdates.value.filter((item) => item.uuid !== source.uuid);
     } else {
-      pendingUpdates.value = pendingUpdates.value.filter(
-        (item) => item.fileName !== fileName,
-      );
+      pendingUpdates.value = pendingUpdates.value.filter((item) => item.fileName !== fileName);
     }
     invalidateCapability(fileName);
   }

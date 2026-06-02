@@ -3,13 +3,13 @@ import type {
   ReaderBookInfo,
   TemporaryChapterSourceOverride,
   WholeBookSwitchedPayload,
-} from '@/components/reader/types';
-import type { ChapterItem } from '@/stores';
-import BookSourceSwitchDialog from '@/components/explore/BookSourceSwitchDialog.vue';
+} from "@/components/reader/types";
+import type { ChapterItem } from "@/stores";
+import BookSourceSwitchDialog from "@/components/explore/BookSourceSwitchDialog.vue";
 
 defineProps<{
   show: boolean;
-  mode: 'whole-book' | 'chapter-temp';
+  mode: "whole-book" | "chapter-temp";
   bookInfo?: ReaderBookInfo;
   fileName: string;
   sourceType?: string;
@@ -20,9 +20,9 @@ defineProps<{
 }>();
 
 const emit = defineEmits<{
-  (e: 'update:show', value: boolean): void;
-  (e: 'chapter-temp-switched', payload: TemporaryChapterSourceOverride): void;
-  (e: 'whole-book-switched', payload: WholeBookSwitchedPayload): void;
+  (e: "update:show", value: boolean): void;
+  (e: "chapter-temp-switched", payload: TemporaryChapterSourceOverride): void;
+  (e: "whole-book-switched", payload: WholeBookSwitchedPayload): void;
 }>();
 </script>
 
@@ -40,6 +40,7 @@ const emit = defineEmits<{
       bookUrl: bookInfo?.bookUrl,
     }"
     :current-file-name="fileName"
+    :current-source-dir="bookInfo?.sourceDir"
     :current-source-name="bookInfo?.sourceName ?? ''"
     :current-source-type="sourceType"
     :current-chapters="chapters"

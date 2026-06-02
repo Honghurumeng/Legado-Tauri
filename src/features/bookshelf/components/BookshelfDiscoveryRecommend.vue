@@ -19,10 +19,7 @@ import AppDrawer from "@/components/base/AppDrawer.vue";
 import SourceTypeBadge from "@/components/base/SourceTypeBadge.vue";
 import BookCoverImg from "@/components/BookCoverImg.vue";
 import { useDynamicConfig } from "@/composables/useDynamicConfig";
-import {
-  isHtmlExploreResult,
-  isUrlExploreResult,
-} from "@/composables/useExploreBridge";
+import { isHtmlExploreResult, isUrlExploreResult } from "@/composables/useExploreBridge";
 import {
   type ExploreCategoryItem,
   getCachedExploreBooks,
@@ -38,6 +35,7 @@ import { useBookSourceStore, useScriptBridgeStore } from "@/stores";
 interface RecommendationConfig {
   enabled: boolean;
   fileName: string;
+  sourceDir?: string;
   category: string;
   title: string;
   limit: number;
@@ -102,6 +100,7 @@ const LEGACY_MODULE_ID = "legacy-discovery-recommendation";
 const DEFAULT_CONFIG: RecommendationConfig = {
   enabled: false,
   fileName: "",
+  sourceDir: "",
   category: "",
   title: "发现推荐",
   limit: 8,
@@ -124,13 +123,11 @@ const LAYOUT_OPTIONS: LayoutOption[] = [
   { key: "waterfall", label: "错位瀑布流", hint: "错落封面排布" },
 ];
 
-const layoutKeySet = new Set<RecommendationLayout>(
-  LAYOUT_OPTIONS.map((option) => option.key),
-);
+const layoutKeySet = new Set<RecommendationLayout>(LAYOUT_OPTIONS.map((option) => option.key));
 
 const emit = defineEmits<{
-  (e: "select", book: BookItem, fileName: string): void;
-  (e: "open-book", bookUrl: string, fileName: string): void;
+  (e: "select", book: BookItem, fileName: string, sourceDir?: string): void;
+  (e: "open-book", bookUrl: string, fileName: string, sourceDir?: string): void;
   (e: "shelf-order-change", order: number): void;
   (e: "shelf-config-change", config: ShelfComponentConfig): void;
 }>();
@@ -190,9 +187,7 @@ function flattenExploreCategories(
   return out;
 }
 
-const draftSelectableCategories = computed(() =>
-  flattenExploreCategories(draftCategories.value),
-);
+const draftSelectableCategories = computed(() => flattenExploreCategories(draftCategories.value));
 
 const moduleBooks = reactive<Record<string, BookItem[]>>({});
 const moduleLoading = reactive<Record<string, boolean>>({});
@@ -208,10 +203,14 @@ const selectableSources = computed(() =>
   bookSourceStore.explorableSources.filter(isStandardExploreSource),
 );
 
+function sourceKeyOf(source: BookSourceMeta): string {
+  return source.sourceKey || `${source.sourceDir}::${source.fileName}`;
+}
+
 const sourceOptions = computed<SelectOption[]>(() =>
   selectableSources.value.map((source) => ({
     label: source.name,
-    value: source.fileName,
+    value: sourceKeyOf(source),
   })),
 );
 
@@ -219,22 +218,18 @@ const homeConfig = computed(() => normalizeHomeConfigState(configStore.state));
 const shelfConfig = computed(() => homeConfig.value.shelf);
 const configuredModules = computed(() => homeConfig.value.modules);
 const activeModules = computed(() =>
-  configuredModules.value.filter(
-    (module) => module.enabled && !!module.fileName,
-  ),
+  configuredModules.value.filter((module) => module.enabled && !!module.fileName),
 );
 const activeModuleConfigKey = computed(() =>
   activeModules.value
     .map(
       (module) =>
-        `${module.id}|${module.enabled}|${module.fileName}|${module.category}|${module.limit}|${module.layout}`,
+        `${module.id}|${module.enabled}|${module.fileName}|${module.sourceDir ?? ""}|${module.category}|${module.limit}|${module.layout}`,
     )
     .join("\n"),
 );
 const visibleRecommendationItems = computed<RecommendationRenderItem[]>(() => {
-  const moduleMap = new Map(
-    configuredModules.value.map((module) => [module.id, module]),
-  );
+  const moduleMap = new Map(configuredModules.value.map((module) => [module.id, module]));
   return homeConfig.value.order
     .map((id, order): RecommendationRenderItem | null => {
       if (id === SHELF_COMPONENT_ID) {
@@ -249,9 +244,7 @@ const visibleRecommendationItems = computed<RecommendationRenderItem[]>(() => {
     .filter((item): item is RecommendationRenderItem => item !== null);
 });
 const settingsItems = computed<SettingsItem[]>(() => {
-  const moduleMap = new Map(
-    configuredModules.value.map((module) => [module.id, module]),
-  );
+  const moduleMap = new Map(configuredModules.value.map((module) => [module.id, module]));
   return homeConfig.value.order
     .map((id, order): SettingsItem | null => {
       if (id === SHELF_COMPONENT_ID) {
@@ -266,18 +259,16 @@ const shelfOrder = computed(() => {
   const index = homeConfig.value.order.indexOf(SHELF_COMPONENT_ID);
   return index >= 0 ? index : 0;
 });
-const draftSource = computed(() => getSourceByFileName(draft.fileName));
+const draftSource = computed(() => getSourceByFileName(draft.fileName, draft.sourceDir));
+const draftSourceKey = computed(() => (draftSource.value ? sourceKeyOf(draftSource.value) : ""));
 const editingModule = computed(() =>
   editingModuleId.value
-    ? configuredModules.value.find(
-        (module) => module.id === editingModuleId.value,
-      )
+    ? configuredModules.value.find((module) => module.id === editingModuleId.value)
     : null,
 );
 
 function normalizeLayout(raw: unknown): RecommendationLayout {
-  return typeof raw === "string" &&
-    layoutKeySet.has(raw as RecommendationLayout)
+  return typeof raw === "string" && layoutKeySet.has(raw as RecommendationLayout)
     ? (raw as RecommendationLayout)
     : DEFAULT_CONFIG.layout;
 }
@@ -295,22 +286,16 @@ function normalizeText(value: unknown, fallback = ""): string {
 }
 
 function normalizeShelfConfig(raw: unknown): ShelfComponentConfig {
-  const record =
-    raw && typeof raw === "object" ? (raw as Record<string, unknown>) : {};
+  const record = raw && typeof raw === "object" ? (raw as Record<string, unknown>) : {};
   const title = normalizeText(record.title, DEFAULT_SHELF_CONFIG.title).trim();
   return {
     showTitle:
-      typeof record.showTitle === "boolean"
-        ? record.showTitle
-        : DEFAULT_SHELF_CONFIG.showTitle,
+      typeof record.showTitle === "boolean" ? record.showTitle : DEFAULT_SHELF_CONFIG.showTitle,
     title: title || DEFAULT_SHELF_CONFIG.title,
   };
 }
 
-function normalizeModule(
-  raw: unknown,
-  fallbackId: string,
-): RecommendationModule | null {
+function normalizeModule(raw: unknown, fallbackId: string): RecommendationModule | null {
   if (!raw || typeof raw !== "object") {
     return null;
   }
@@ -320,17 +305,15 @@ function normalizeModule(
     id: normalizeText(record.id, fallbackId) || fallbackId,
     enabled: typeof record.enabled === "boolean" ? record.enabled : !!fileName,
     fileName,
+    sourceDir: normalizeText(record.sourceDir),
     category: normalizeText(record.category),
-    title:
-      normalizeText(record.title, DEFAULT_CONFIG.title) || DEFAULT_CONFIG.title,
+    title: normalizeText(record.title, DEFAULT_CONFIG.title) || DEFAULT_CONFIG.title,
     limit: normalizeLimit(record.limit),
     layout: normalizeLayout(record.layout),
   };
 }
 
-function normalizeHomeConfigState(
-  state: RecommendationState,
-): BookshelfHomeConfig {
+function normalizeHomeConfigState(state: RecommendationState): BookshelfHomeConfig {
   const modules: RecommendationModule[] = [];
   const usedIds = new Set<string>();
   const rawModules = Array.isArray(state.modules) ? state.modules : null;
@@ -356,6 +339,7 @@ function normalizeHomeConfigState(
         id: LEGACY_MODULE_ID,
         enabled: state.enabled || !!state.fileName,
         fileName: state.fileName,
+        sourceDir: state.sourceDir,
         category: state.category,
         title: state.title,
         limit: state.limit,
@@ -406,16 +390,31 @@ function createModuleId(): string {
   return `recommendation-${Date.now().toString(36)}-${moduleIdSeed}`;
 }
 
-function getSourceByFileName(fileName: string): BookSourceMeta | undefined {
+function getSourceByFileName(fileName: string, sourceDir?: string): BookSourceMeta | undefined {
+  const matchesSource = (source: BookSourceMeta) =>
+    source.fileName === fileName && (!sourceDir || source.sourceDir === sourceDir);
   return (
+    selectableSources.value.find(matchesSource) ??
+    bookSourceStore.sources.find(matchesSource) ??
     selectableSources.value.find((source) => source.fileName === fileName) ??
     bookSourceStore.sources.find((source) => source.fileName === fileName)
   );
 }
 
-function getSourceDir(fileName: string): string | undefined {
-  return bookSourceStore.sources.find((source) => source.fileName === fileName)
-    ?.sourceDir;
+function getModuleSource(module: RecommendationModule): BookSourceMeta | undefined {
+  return getSourceByFileName(module.fileName, module.sourceDir);
+}
+
+function getModuleSourceDir(module: RecommendationModule): string | undefined {
+  return module.sourceDir || getModuleSource(module)?.sourceDir;
+}
+
+function getModuleSourceKey(module: RecommendationModule): string {
+  const source = getModuleSource(module);
+  if (source) {
+    return sourceKeyOf(source);
+  }
+  return module.sourceDir ? `${module.sourceDir}::${module.fileName}` : module.fileName;
 }
 
 async function persistHomeConfig(config: BookshelfHomeConfig): Promise<void> {
@@ -425,12 +424,8 @@ async function persistHomeConfig(config: BookshelfHomeConfig): Promise<void> {
 async function persistNormalizedConfigIfNeeded(): Promise<void> {
   const normalized = toPersistableConfig(homeConfig.value);
   const current = {
-    modules: Array.isArray(configStore.state.modules)
-      ? configStore.state.modules
-      : [],
-    order: Array.isArray(configStore.state.order)
-      ? configStore.state.order
-      : [],
+    modules: Array.isArray(configStore.state.modules) ? configStore.state.modules : [],
+    order: Array.isArray(configStore.state.order) ? configStore.state.order : [],
     shelf: normalizeShelfConfig(configStore.state.shelf),
   };
   if (JSON.stringify(normalized) !== JSON.stringify(current)) {
@@ -497,17 +492,13 @@ function isCurrentRequest(moduleId: string, requestToken: number): boolean {
   return moduleRequestTokens.get(moduleId) === requestToken;
 }
 
-async function fetchBooks(
-  module: RecommendationModule,
-  requestToken: number,
-  noCache: boolean,
-) {
+async function fetchBooks(module: RecommendationModule, requestToken: number, noCache: boolean) {
   const raw = await scriptBridgeStore.runExplore(
     module.fileName,
     module.category,
     1,
     noCache,
-    getSourceDir(module.fileName),
+    getModuleSourceDir(module),
   );
   if (!isCurrentRequest(module.id, requestToken)) {
     return;
@@ -520,7 +511,7 @@ async function fetchBooks(
   }
   moduleBooks[module.id] = nextBooks;
   moduleErrors[module.id] = "";
-  setCachedExploreBooks(module.fileName, module.category, nextBooks);
+  setCachedExploreBooks(getModuleSourceKey(module), module.category, nextBooks);
 }
 
 async function loadRecommendation(module: RecommendationModule, force = false) {
@@ -534,15 +525,12 @@ async function loadRecommendation(module: RecommendationModule, force = false) {
   moduleErrors[module.id] = "";
 
   if (!force) {
-    const cached = getCachedExploreBooks(module.fileName, module.category);
+    const cached = getCachedExploreBooks(getModuleSourceKey(module), module.category);
     if (cached) {
       moduleBooks[module.id] = cached;
       moduleLoading[module.id] = false;
       void fetchBooks(module, requestToken, false).catch(() => {
-        if (
-          isCurrentRequest(module.id, requestToken) &&
-          !moduleBooks[module.id]?.length
-        ) {
+        if (isCurrentRequest(module.id, requestToken) && !moduleBooks[module.id]?.length) {
           moduleErrors[module.id] = "推荐刷新失败";
         }
       });
@@ -556,8 +544,7 @@ async function loadRecommendation(module: RecommendationModule, force = false) {
   } catch (error: unknown) {
     if (isCurrentRequest(module.id, requestToken)) {
       moduleBooks[module.id] = [];
-      moduleErrors[module.id] =
-        error instanceof Error ? error.message : String(error);
+      moduleErrors[module.id] = error instanceof Error ? error.message : String(error);
     }
   } finally {
     if (isCurrentRequest(module.id, requestToken)) {
@@ -567,9 +554,7 @@ async function loadRecommendation(module: RecommendationModule, force = false) {
 }
 
 async function loadAllRecommendations(force = false) {
-  await Promise.all(
-    activeModules.value.map((module) => loadRecommendation(module, force)),
-  );
+  await Promise.all(activeModules.value.map((module) => loadRecommendation(module, force)));
 }
 
 async function refreshRecommendation(module: RecommendationModule) {
@@ -595,29 +580,20 @@ function normalizeCategoriesResult(raw: unknown): ExploreCategoryItem[] | null {
     return [];
   }
   const categories = normalizeExploreCategories(raw);
-  if (
-    categories.length === 0 ||
-    (categories.length === 1 && categories[0].url === "")
-  ) {
+  if (categories.length === 0 || (categories.length === 1 && categories[0].url === "")) {
     return [];
   }
   return categories;
 }
 
-function applyDraftCategories(
-  categories: ExploreCategoryItem[],
-  preferredCategory?: string,
-) {
+function applyDraftCategories(categories: ExploreCategoryItem[], preferredCategory?: string) {
   draftCategories.value = categories;
   const selectableCategories = flattenExploreCategories(categories);
   if (!selectableCategories.length) {
     draft.category = "";
     return;
   }
-  if (
-    draft.category &&
-    selectableCategories.some((category) => category.url === draft.category)
-  ) {
+  if (draft.category && selectableCategories.some((category) => category.url === draft.category)) {
     return;
   }
   if (
@@ -633,6 +609,7 @@ function applyDraftCategories(
 async function loadDraftCategories(
   fileName: string,
   preferredCategory?: string,
+  sourceDir?: string,
 ) {
   const requestToken = ++categoryRequestToken;
   draftCategoriesError.value = "";
@@ -641,16 +618,17 @@ async function loadDraftCategories(
     return;
   }
 
-  const cached = getCachedExploreCategories(fileName);
+  const cacheKey = sourceDir ? `${sourceDir}::${fileName}` : fileName;
+  const cached = getCachedExploreCategories(cacheKey);
   if (cached !== null && cached !== undefined) {
     applyDraftCategories(cached, preferredCategory);
-    void refreshDraftCategories(requestToken, fileName, preferredCategory);
+    void refreshDraftCategories(requestToken, fileName, preferredCategory, sourceDir);
     return;
   }
 
   draftCategoriesLoading.value = true;
   try {
-    await refreshDraftCategories(requestToken, fileName, preferredCategory);
+    await refreshDraftCategories(requestToken, fileName, preferredCategory, sourceDir);
   } finally {
     if (requestToken === categoryRequestToken) {
       draftCategoriesLoading.value = false;
@@ -662,14 +640,9 @@ async function refreshDraftCategories(
   requestToken: number,
   fileName: string,
   preferredCategory?: string,
+  sourceDir?: string,
 ) {
-  const raw = await scriptBridgeStore.runExplore(
-    fileName,
-    "GETALL",
-    1,
-    false,
-    getSourceDir(fileName),
-  );
+  const raw = await scriptBridgeStore.runExplore(fileName, "GETALL", 1, false, sourceDir);
   if (requestToken !== categoryRequestToken) {
     return;
   }
@@ -681,14 +654,16 @@ async function refreshDraftCategories(
   }
   draftCategoriesError.value = "";
   applyDraftCategories(categories, preferredCategory);
-  setCachedExploreCategories(fileName, categories);
+  setCachedExploreCategories(sourceDir ? `${sourceDir}::${fileName}` : fileName, categories);
 }
 
 function syncDraftFromModule(module: RecommendationModule) {
   editingModuleId.value = module.id;
+  const source = getModuleSource(module);
   Object.assign(draft, {
     enabled: module.enabled,
     fileName: module.fileName,
+    sourceDir: module.sourceDir || source?.sourceDir || "",
     category: module.category,
     title: module.title || DEFAULT_CONFIG.title,
     limit: normalizeLimit(module.limit),
@@ -710,9 +685,10 @@ async function startAddModule() {
   draftCategoriesError.value = "";
   if (!draft.fileName && selectableSources.value[0]) {
     draft.fileName = selectableSources.value[0].fileName;
+    draft.sourceDir = selectableSources.value[0].sourceDir;
   }
   if (draft.fileName) {
-    await loadDraftCategories(draft.fileName, draft.category);
+    await loadDraftCategories(draft.fileName, draft.category, draft.sourceDir);
   }
 }
 
@@ -725,7 +701,7 @@ async function editModule(moduleId: string) {
   }
   syncDraftFromModule(module);
   if (module.fileName) {
-    await loadDraftCategories(module.fileName, module.category);
+    await loadDraftCategories(module.fileName, module.category, module.sourceDir);
   }
 }
 
@@ -747,12 +723,18 @@ function closeSettings() {
 }
 
 async function onDraftSourceUpdate(value: string) {
-  draft.fileName = value;
+  const source = selectableSources.value.find((item) => sourceKeyOf(item) === value);
+  draft.fileName = source?.fileName ?? "";
+  draft.sourceDir = source?.sourceDir ?? "";
   draft.category = "";
-  if (value) {
+  if (source) {
     draft.enabled = true;
   }
-  await loadDraftCategories(value);
+  if (source) {
+    await loadDraftCategories(source.fileName, undefined, source.sourceDir);
+  } else {
+    draftCategories.value = [];
+  }
 }
 
 async function saveSettings() {
@@ -766,21 +748,18 @@ async function saveSettings() {
   }
 
   const current = homeConfig.value;
-  const moduleId = editingModule.value
-    ? editingModule.value.id
-    : createModuleId();
+  const moduleId = editingModule.value ? editingModule.value.id : createModuleId();
   const nextModule: RecommendationModule = {
     id: moduleId,
     enabled: draft.enabled,
     fileName: draft.fileName,
+    sourceDir: draft.sourceDir || draftSource.value?.sourceDir,
     category: draft.category,
     title: draft.title.trim() || DEFAULT_CONFIG.title,
     limit: normalizeLimit(draft.limit),
     layout: normalizeLayout(draft.layout),
   };
-  const existingIndex = current.modules.findIndex(
-    (module) => module.id === moduleId,
-  );
+  const existingIndex = current.modules.findIndex((module) => module.id === moduleId);
   const modules = current.modules.map((module) => ({ ...module }));
   if (existingIndex >= 0) {
     modules[existingIndex] = nextModule;
@@ -789,9 +768,7 @@ async function saveSettings() {
   }
 
   const validIds = new Set(modules.map((module) => module.id));
-  const order = current.order.filter(
-    (id) => id === SHELF_COMPONENT_ID || validIds.has(id),
-  );
+  const order = current.order.filter((id) => id === SHELF_COMPONENT_ID || validIds.has(id));
   if (!order.includes(SHELF_COMPONENT_ID)) {
     order.push(SHELF_COMPONENT_ID);
   }
@@ -895,16 +872,14 @@ async function updateShelfTitle(title: string) {
 function canMove(componentId: string, delta: -1 | 1): boolean {
   const index = homeConfig.value.order.indexOf(componentId);
   const nextIndex = index + delta;
-  return (
-    index >= 0 && nextIndex >= 0 && nextIndex < homeConfig.value.order.length
-  );
+  return index >= 0 && nextIndex >= 0 && nextIndex < homeConfig.value.order.length;
 }
 
 function selectBook(module: RecommendationModule, book: BookItem) {
   if (!module.fileName) {
     return;
   }
-  emit("select", book, module.fileName);
+  emit("select", book, module.fileName, getModuleSourceDir(module));
 }
 
 function bookSubtitle(book: BookItem): string {
@@ -912,13 +887,7 @@ function bookSubtitle(book: BookItem): string {
 }
 
 function bookMeta(book: BookItem): string {
-  return (
-    book.latestChapter ||
-    book.lastChapter ||
-    book.status ||
-    book.updateTime ||
-    ""
-  );
+  return book.latestChapter || book.lastChapter || book.status || book.updateTime || "";
 }
 
 function getCategoryLabel(module: RecommendationModule): string {
@@ -931,9 +900,7 @@ function getActiveLayout(module: RecommendationModule): RecommendationLayout {
 
 function getActiveLayoutLabel(module: RecommendationModule): string {
   const layout = getActiveLayout(module);
-  return (
-    LAYOUT_OPTIONS.find((option) => option.key === layout)?.label ?? "横滑轮播"
-  );
+  return LAYOUT_OPTIONS.find((option) => option.key === layout)?.label ?? "横滑轮播";
 }
 
 function getRecommendationTitle(module: RecommendationModule): string {
@@ -971,7 +938,7 @@ function isModuleRefreshing(module: RecommendationModule): boolean {
 }
 
 function getModuleHint(module: RecommendationModule): string {
-  const source = getSourceByFileName(module.fileName);
+  const source = getModuleSource(module);
   return [
     source?.name ?? (module.fileName || "未选择书源"),
     getCategoryLabel(module),
@@ -982,13 +949,11 @@ function getModuleHint(module: RecommendationModule): string {
 }
 
 function getModuleSourceType(module: RecommendationModule): string {
-  return getSourceByFileName(module.fileName)?.sourceType ?? "";
+  return getModuleSource(module)?.sourceType ?? "";
 }
 
 function isEditingSettingsItem(item: SettingsItem): boolean {
-  return (
-    item.type === "recommendation" && editingModuleId.value === item.module.id
-  );
+  return item.type === "recommendation" && editingModuleId.value === item.module.id;
 }
 
 function getSettingsItemTitle(item: SettingsItem): string {
@@ -1062,9 +1027,7 @@ defineExpose({ openSettings });
           <h2 class="bs-rec__title">{{ getRecommendationTitle(module) }}</h2>
         </div>
         <div class="bs-rec__meta">
-          <span>{{
-            getSourceByFileName(module.fileName)?.name ?? module.fileName
-          }}</span>
+          <span>{{ getModuleSource(module)?.name ?? module.fileName }}</span>
           <span>{{ getCategoryLabel(module) }}</span>
           <span>{{ getActiveLayoutLabel(module) }}</span>
         </div>
@@ -1097,11 +1060,7 @@ defineExpose({ openSettings });
       v-if="isModuleLoading(module)"
       class="bs-rec__books bs-rec__books--carousel bs-rec__books--loading"
     >
-      <div
-        v-for="idx in getRecommendationLimit(module)"
-        :key="idx"
-        class="bs-rec-skeleton"
-      >
+      <div v-for="idx in getRecommendationLimit(module)" :key="idx" class="bs-rec-skeleton">
         <div class="bs-rec-skeleton__cover" />
         <div class="bs-rec-skeleton__line" />
         <div class="bs-rec-skeleton__line bs-rec-skeleton__line--short" />
@@ -1110,24 +1069,14 @@ defineExpose({ openSettings });
 
     <div v-else-if="getModuleError(module)" class="bs-rec__state">
       <span>{{ getModuleError(module) }}</span>
-      <button
-        type="button"
-        class="bs-rec__text-btn"
-        @click="openSettings(module.id)"
-      >
+      <button type="button" class="bs-rec__text-btn" @click="openSettings(module.id)">
         重新选择
       </button>
     </div>
 
-    <div
-      v-else-if="getModuleVisibleBooks(module).length"
-      class="bs-rec__content"
-    >
+    <div v-else-if="getModuleVisibleBooks(module).length" class="bs-rec__content">
       <div
-        v-if="
-          getActiveLayout(module) === 'ranking' ||
-          getActiveLayout(module) === 'rankingGrid'
-        "
+        v-if="getActiveLayout(module) === 'ranking' || getActiveLayout(module) === 'rankingGrid'"
         class="bs-rec-ranking"
         :class="{
           'bs-rec-ranking--grid': getActiveLayout(module) === 'rankingGrid',
@@ -1142,37 +1091,23 @@ defineExpose({ openSettings });
         >
           <span class="bs-rec-rank-card__index">{{ index + 1 }}</span>
           <span class="bs-rec-rank-card__cover">
-            <BookCoverImg
-              :src="book.coverUrl"
-              :alt="book.name"
-              :base-url="book.bookUrl"
-            />
+            <BookCoverImg :src="book.coverUrl" :alt="book.name" :base-url="book.bookUrl" />
           </span>
           <span class="bs-rec-rank-card__body">
-            <span
-              class="bs-rec-rank-card__name"
-              :title="book.name || '未知书名'"
-            >
+            <span class="bs-rec-rank-card__name" :title="book.name || '未知书名'">
               {{ book.name || "未知书名" }}
             </span>
             <span class="bs-rec-rank-card__sub" :title="bookSubtitle(book)">
               {{ bookSubtitle(book) }}
             </span>
-            <span
-              v-if="bookMeta(book)"
-              class="bs-rec-rank-card__meta"
-              :title="bookMeta(book)"
-            >
+            <span v-if="bookMeta(book)" class="bs-rec-rank-card__meta" :title="bookMeta(book)">
               {{ bookMeta(book) }}
             </span>
           </span>
         </button>
       </div>
 
-      <div
-        v-else-if="getActiveLayout(module) === 'buttonGroup'"
-        class="bs-rec-buttons"
-      >
+      <div v-else-if="getActiveLayout(module) === 'buttonGroup'" class="bs-rec-buttons">
         <button
           v-for="(book, index) in getModuleVisibleBooks(module)"
           :key="book.bookUrl"
@@ -1182,20 +1117,13 @@ defineExpose({ openSettings });
         >
           <span class="bs-rec-button-card__rank">{{ index + 1 }}</span>
           <span class="bs-rec-button-card__text">
-            <span class="bs-rec-button-card__name">{{
-              book.name || "未知书名"
-            }}</span>
-            <span class="bs-rec-button-card__sub">{{
-              bookSubtitle(book)
-            }}</span>
+            <span class="bs-rec-button-card__name">{{ book.name || "未知书名" }}</span>
+            <span class="bs-rec-button-card__sub">{{ bookSubtitle(book) }}</span>
           </span>
         </button>
       </div>
 
-      <div
-        v-else-if="getActiveLayout(module) === 'waterfall'"
-        class="bs-rec-waterfall"
-      >
+      <div v-else-if="getActiveLayout(module) === 'waterfall'" class="bs-rec-waterfall">
         <button
           v-for="(book, index) in getModuleVisibleBooks(module)"
           :key="book.bookUrl"
@@ -1205,11 +1133,7 @@ defineExpose({ openSettings });
         >
           <span class="bs-rec-card__rank">{{ index + 1 }}</span>
           <span class="bs-rec-card__cover" :style="waterfallCoverStyle(index)">
-            <BookCoverImg
-              :src="book.coverUrl"
-              :alt="book.name"
-              :base-url="book.bookUrl"
-            />
+            <BookCoverImg :src="book.coverUrl" :alt="book.name" :base-url="book.bookUrl" />
           </span>
           <span class="bs-rec-card__body">
             <span class="bs-rec-card__name" :title="book.name || '未知书名'">
@@ -1232,26 +1156,17 @@ defineExpose({ openSettings });
           :key="book.bookUrl"
           class="bs-rec-card"
           :class="{
-            'bs-rec-card--featured':
-              getActiveLayout(module) === 'featured' && index === 0,
+            'bs-rec-card--featured': getActiveLayout(module) === 'featured' && index === 0,
           }"
           type="button"
           @click="selectBook(module, book)"
         >
           <span class="bs-rec-card__rank">{{ index + 1 }}</span>
           <span v-if="getModuleSourceType(module)" class="bs-rec-card__type">
-            <SourceTypeBadge
-              :source-type="getModuleSourceType(module)"
-              :opaque="true"
-              :size="11"
-            />
+            <SourceTypeBadge :source-type="getModuleSourceType(module)" :opaque="true" :size="11" />
           </span>
           <span class="bs-rec-card__cover">
-            <BookCoverImg
-              :src="book.coverUrl"
-              :alt="book.name"
-              :base-url="book.bookUrl"
-            />
+            <BookCoverImg :src="book.coverUrl" :alt="book.name" :base-url="book.bookUrl" />
           </span>
           <span class="bs-rec-card__body">
             <span class="bs-rec-card__name" :title="book.name || '未知书名'">
@@ -1260,11 +1175,7 @@ defineExpose({ openSettings });
             <span class="bs-rec-card__author" :title="bookSubtitle(book)">
               {{ bookSubtitle(book) }}
             </span>
-            <span
-              v-if="bookMeta(book)"
-              class="bs-rec-card__meta"
-              :title="bookMeta(book)"
-            >
+            <span v-if="bookMeta(book)" class="bs-rec-card__meta" :title="bookMeta(book)">
               {{ bookMeta(book) }}
             </span>
           </span>
@@ -1274,30 +1185,19 @@ defineExpose({ openSettings });
 
     <div v-else class="bs-rec__state">
       <span>暂无推荐内容</span>
-      <button
-        type="button"
-        class="bs-rec__text-btn"
-        @click="refreshRecommendation(module)"
-      >
+      <button type="button" class="bs-rec__text-btn" @click="refreshRecommendation(module)">
         刷新
       </button>
     </div>
   </section>
 
-  <AppDrawer
-    ref="settingsDrawerRef"
-    v-model:show="showSettings"
-    title="首页编排"
-    :width="520"
-  >
+  <AppDrawer ref="settingsDrawerRef" v-model:show="showSettings" title="首页编排" :width="520">
     <div class="bs-rec-settings">
       <section class="bs-rec-settings__section">
         <div class="bs-rec-settings__section-head">
           <div>
             <div class="bs-rec-settings__label">首页组件</div>
-            <div class="bs-rec-settings__hint">
-              推荐模块和默认书架都可以上下调整顺序
-            </div>
+            <div class="bs-rec-settings__hint">推荐模块和默认书架都可以上下调整顺序</div>
           </div>
           <n-button size="small" type="primary" ghost @click="startAddModule">
             <template #icon>
@@ -1314,8 +1214,7 @@ defineExpose({ openSettings });
             class="bs-rec-order-item"
             :class="{
               'bs-rec-order-item--active': isEditingSettingsItem(item),
-              'bs-rec-order-item--muted':
-                item.type === 'recommendation' && !item.module.enabled,
+              'bs-rec-order-item--muted': item.type === 'recommendation' && !item.module.enabled,
             }"
           >
             <GripVertical class="bs-rec-order-item__grip" :size="16" />
@@ -1354,17 +1253,9 @@ defineExpose({ openSettings });
                 <n-switch
                   size="small"
                   :value="item.module.enabled"
-                  @update:value="
-                    (value: boolean) =>
-                      updateModuleEnabled(item.module.id, value)
-                  "
+                  @update:value="(value: boolean) => updateModuleEnabled(item.module.id, value)"
                 />
-                <n-button
-                  size="tiny"
-                  quaternary
-                  @click="editModule(item.module.id)"
-                  >设置</n-button
-                >
+                <n-button size="tiny" quaternary @click="editModule(item.module.id)">设置</n-button>
                 <n-button
                   size="tiny"
                   quaternary
@@ -1385,9 +1276,7 @@ defineExpose({ openSettings });
           <div class="bs-rec-shelf-settings__head">
             <div class="bs-rec-shelf-settings__text">
               <div class="bs-rec-settings__label">默认书架</div>
-              <div class="bs-rec-settings__hint">
-                给书架网格加入独立顶部标题
-              </div>
+              <div class="bs-rec-settings__hint">给书架网格加入独立顶部标题</div>
             </div>
             <n-switch
               :value="shelfConfig.showTitle"
@@ -1395,9 +1284,7 @@ defineExpose({ openSettings });
             />
           </div>
           <div class="bs-rec-settings__row">
-            <label class="bs-rec-settings__label" for="bookshelf-shelf-title"
-              >书架标题</label
-            >
+            <label class="bs-rec-settings__label" for="bookshelf-shelf-title">书架标题</label>
             <n-input
               id="bookshelf-shelf-title"
               :value="shelfConfig.title"
@@ -1424,20 +1311,16 @@ defineExpose({ openSettings });
         </div>
 
         <div class="bs-rec-settings__row">
-          <label class="bs-rec-settings__label" for="bookshelf-recommend-source"
-            >书源</label
-          >
+          <label class="bs-rec-settings__label" for="bookshelf-recommend-source">书源</label>
           <n-select
             id="bookshelf-recommend-source"
-            :value="draft.fileName"
+            :value="draftSourceKey"
             :options="sourceOptions"
             :loading="sourceLoading"
             filterable
             clearable
             placeholder="选择发现书源"
-            @update:value="
-              (value: string | null) => onDraftSourceUpdate(value ?? '')
-            "
+            @update:value="(value: string | null) => onDraftSourceUpdate(value ?? '')"
           />
         </div>
 
@@ -1473,9 +1356,7 @@ defineExpose({ openSettings });
               <Check v-if="draft.category === category.url" :size="13" />
               {{ category.name }}
             </button>
-            <span v-if="!draft.fileName" class="bs-rec-settings__empty"
-              >先选择书源</span
-            >
+            <span v-if="!draft.fileName" class="bs-rec-settings__empty">先选择书源</span>
           </div>
         </div>
 
@@ -1490,32 +1371,21 @@ defineExpose({ openSettings });
               type="button"
               @click="draft.layout = layout.key"
             >
-              <span
-                class="bs-rec-layout__preview"
-                :class="layoutPreviewClass(layout.key)"
-              >
+              <span class="bs-rec-layout__preview" :class="layoutPreviewClass(layout.key)">
                 <span v-for="idx in 6" :key="idx" />
               </span>
               <span class="bs-rec-layout__text">
                 <span class="bs-rec-layout__label">{{ layout.label }}</span>
                 <span class="bs-rec-layout__hint">{{ layout.hint }}</span>
               </span>
-              <Check
-                v-if="draft.layout === layout.key"
-                class="bs-rec-layout__check"
-                :size="14"
-              />
+              <Check v-if="draft.layout === layout.key" class="bs-rec-layout__check" :size="14" />
             </button>
           </div>
         </div>
 
         <div class="bs-rec-settings__grid">
           <div class="bs-rec-settings__row">
-            <label
-              class="bs-rec-settings__label"
-              for="bookshelf-recommend-title"
-              >标题</label
-            >
+            <label class="bs-rec-settings__label" for="bookshelf-recommend-title">标题</label>
             <n-input
               id="bookshelf-recommend-title"
               v-model:value="draft.title"
@@ -1524,11 +1394,7 @@ defineExpose({ openSettings });
             />
           </div>
           <div class="bs-rec-settings__row">
-            <label
-              class="bs-rec-settings__label"
-              for="bookshelf-recommend-limit"
-              >数量</label
-            >
+            <label class="bs-rec-settings__label" for="bookshelf-recommend-limit">数量</label>
             <n-input-number
               id="bookshelf-recommend-limit"
               v-model:value="draft.limit"
@@ -1542,11 +1408,7 @@ defineExpose({ openSettings });
     </div>
     <template #footer>
       <div class="bs-rec-settings__footer">
-        <n-button
-          quaternary
-          :disabled="!editingModuleId"
-          @click="disableRecommendation"
-        >
+        <n-button quaternary :disabled="!editingModuleId" @click="disableRecommendation">
           停用此模块
         </n-button>
         <div class="bs-rec-settings__footer-actions">
@@ -1557,11 +1419,7 @@ defineExpose({ openSettings });
             新建
           </n-button>
           <n-button @click="closeSettings">完成</n-button>
-          <n-button
-            type="primary"
-            :disabled="!draft.fileName"
-            @click="saveSettings"
-          >
+          <n-button type="primary" :disabled="!draft.fileName" @click="saveSettings">
             保存模块
           </n-button>
         </div>
@@ -2021,12 +1879,7 @@ defineExpose({ openSettings });
   position: absolute;
   inset: 0;
   transform: translateX(-100%);
-  background: linear-gradient(
-    90deg,
-    transparent,
-    rgba(255, 255, 255, 0.16),
-    transparent
-  );
+  background: linear-gradient(90deg, transparent, rgba(255, 255, 255, 0.16), transparent);
   animation: bs-rec-shimmer 1.5s infinite;
 }
 
@@ -2301,11 +2154,7 @@ defineExpose({ openSettings });
   min-width: 0;
   min-height: 0;
   border-radius: 3px;
-  background: color-mix(
-    in srgb,
-    var(--color-accent) 28%,
-    var(--color-surface-hover)
-  );
+  background: color-mix(in srgb, var(--color-accent) 28%, var(--color-surface-hover));
 }
 
 .bs-rec-layout-preview--carousel {

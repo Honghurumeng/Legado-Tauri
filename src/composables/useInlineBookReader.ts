@@ -1,13 +1,13 @@
 /**
  * useInlineBookReader — 发现/搜索详情页内联打开阅读器，并处理目录加载与隐私状态同步。
  */
-import { useMessage } from 'naive-ui';
-import { ref, watch, type Ref } from 'vue';
-import type { ChapterGroup, ChapterItem } from '@/stores';
+import { useMessage } from "naive-ui";
+import { ref, watch, type Ref } from "vue";
+import type { ChapterGroup, ChapterItem } from "@/stores";
 // import { useMusicPlayerStore } from "@/stores"; // TODO: 音乐功能暂时屏蔽，待启用时取消注释
-import { usePreferencesStore } from '@/stores/preferences';
-import { safeRandomUUID } from '@/utils/uuid';
-import type { ReaderBookInfo } from '../components/reader/types';
+import { usePreferencesStore } from "@/stores/preferences";
+import { safeRandomUUID } from "@/utils/uuid";
+import type { ReaderBookInfo } from "../components/reader/types";
 
 interface ReaderSwitchShelfBook {
   name: string;
@@ -18,6 +18,7 @@ interface ReaderSwitchShelfBook {
   bookUrl: string;
   sourceName: string;
   fileName: string;
+  sourceDir?: string;
   lastChapter?: string;
   totalChapters: number;
   sourceType?: string;
@@ -36,6 +37,7 @@ interface ReadChapterPayload {
   index: number;
   bookInfo: ReaderBookInfo;
   sourceType: string;
+  sourceDir?: string;
   tocUrl?: string;
   chapterGroups?: ChapterGroup[];
   activeGroupIndex?: number;
@@ -45,11 +47,17 @@ interface UseInlineBookReaderOptions {
   showDrawer: Ref<boolean>;
   drawerBookUrl: Ref<string>;
   drawerFileName: Ref<string>;
+  drawerSourceDir?: Ref<string>;
   privacyExitTick: Ref<unknown>;
-  runChapterList: (fileName: string, tocUrl: string, taskId?: string) => Promise<unknown>;
+  runChapterList: (
+    fileName: string,
+    tocUrl: string,
+    taskId?: string,
+    sourceDir?: string,
+  ) => Promise<unknown>;
   cancelTask: (taskId: string) => void;
   ensureShelfLoaded: () => Promise<void>;
-  getShelfId: (bookUrl: string, fileName: string) => string | undefined;
+  getShelfId: (bookUrl: string, fileName: string, sourceDir?: string) => string | undefined;
   isPrivateShelfBook: (shelfId: string) => boolean;
   onTrackReaderOpen?: (payload: ReadChapterPayload) => void;
 }
@@ -58,27 +66,29 @@ export function useInlineBookReader(options: UseInlineBookReaderOptions) {
   const message = useMessage();
   const prefStore = usePreferencesStore();
   const showReader = ref(false);
-  const readerChapterUrl = ref('');
-  const readerChapterName = ref('');
-  const readerFileName = ref('');
+  const readerChapterUrl = ref("");
+  const readerChapterName = ref("");
+  const readerFileName = ref("");
+  const readerSourceDir = ref("");
   const readerChapters = ref<ChapterItem[]>([]);
-  const readerChaptersKey = ref('');
+  const readerChaptersKey = ref("");
   const readerCurrentIndex = ref(0);
   const readerBookInfo = ref<ReaderBookInfo | undefined>();
-  const readerSourceType = ref('novel');
-  const readerShelfId = ref('');
+  const readerSourceType = ref("novel");
+  const readerShelfId = ref("");
   const readerChapterGroups = ref<ChapterGroup[] | undefined>();
   const readerActiveGroupIndex = ref<number | undefined>();
   const chapterListTaskId = ref<string | null>(null);
 
   function applySourceSwitchToReader(payload: ReaderSwitchPayload) {
     readerFileName.value = payload.shelfBook.fileName;
+    readerSourceDir.value = payload.shelfBook.sourceDir ?? "";
     readerSourceType.value = payload.shelfBook.sourceType ?? readerSourceType.value;
     readerChapters.value = payload.chapters;
     readerCurrentIndex.value = Math.max(0, payload.matchedChapterIndex);
     const chapter = payload.chapters[readerCurrentIndex.value];
-    readerChapterUrl.value = payload.matchedChapterUrl ?? chapter?.url ?? '';
-    readerChapterName.value = chapter?.name ?? '';
+    readerChapterUrl.value = payload.matchedChapterUrl ?? chapter?.url ?? "";
+    readerChapterName.value = chapter?.name ?? "";
     readerBookInfo.value = {
       name: payload.shelfBook.name,
       author: payload.shelfBook.author,
@@ -88,6 +98,7 @@ export function useInlineBookReader(options: UseInlineBookReaderOptions) {
       bookUrl: payload.shelfBook.bookUrl,
       sourceName: payload.shelfBook.sourceName,
       fileName: payload.shelfBook.fileName,
+      sourceDir: payload.shelfBook.sourceDir,
       lastChapter: payload.shelfBook.lastChapter,
       totalChapters: payload.shelfBook.totalChapters,
     };
@@ -98,10 +109,10 @@ export function useInlineBookReader(options: UseInlineBookReaderOptions) {
 
     if (
       !prefStore.devTools.fullModeEnabled &&
-      (payload.sourceType === 'music' || payload.sourceType === 'video')
+      (payload.sourceType === "music" || payload.sourceType === "video")
     ) {
       // TODO: 视频/音乐功能暂时屏蔽，待启用时删除此块并取消下方注释
-      message.warning('需要解锁完全体模式后才能使用音频/视频播放');
+      message.warning("需要解锁完全体模式后才能使用音频/视频播放");
       return;
     }
     // if (payload.sourceType === 'music') {
@@ -140,22 +151,30 @@ export function useInlineBookReader(options: UseInlineBookReaderOptions) {
     readerChapterUrl.value = payload.chapterUrl;
     readerChapterName.value = payload.chapterName;
     readerFileName.value = options.drawerFileName.value;
+    readerSourceDir.value = payload.sourceDir ?? options.drawerSourceDir?.value ?? "";
     readerCurrentIndex.value = payload.index;
-    readerBookInfo.value = payload.bookInfo;
+    readerBookInfo.value = {
+      ...payload.bookInfo,
+      sourceDir: payload.sourceDir ?? payload.bookInfo.sourceDir,
+    };
     readerSourceType.value = payload.sourceType;
-    readerShelfId.value = '';
+    readerShelfId.value = "";
     readerChapterGroups.value = payload.chapterGroups;
     readerActiveGroupIndex.value = payload.activeGroupIndex;
 
     try {
       await options.ensureShelfLoaded();
       readerShelfId.value =
-        options.getShelfId(options.drawerBookUrl.value, options.drawerFileName.value) ?? '';
+        options.getShelfId(
+          options.drawerBookUrl.value,
+          options.drawerFileName.value,
+          readerSourceDir.value || undefined,
+        ) ?? "";
     } catch {
-      readerShelfId.value = '';
+      readerShelfId.value = "";
     }
 
-    const bookKey = `${options.drawerFileName.value}|${options.drawerBookUrl.value}`;
+    const bookKey = `${options.drawerFileName.value}|${readerSourceDir.value}|${options.drawerBookUrl.value}`;
     if (readerChaptersKey.value !== bookKey) {
       readerChapters.value = [];
       readerChaptersKey.value = bookKey;
@@ -170,7 +189,12 @@ export function useInlineBookReader(options: UseInlineBookReaderOptions) {
       chapterListTaskId.value = taskId;
       try {
         const tocUrl = payload.tocUrl ?? options.drawerBookUrl.value;
-        const raw = await options.runChapterList(options.drawerFileName.value, tocUrl, taskId);
+        const raw = await options.runChapterList(
+          options.drawerFileName.value,
+          tocUrl,
+          taskId,
+          readerSourceDir.value || undefined,
+        );
         readerChapters.value = Array.isArray(raw) ? (raw as ChapterItem[]) : [];
       } catch {
         // 加载失败不阻塞阅读
@@ -224,6 +248,7 @@ export function useInlineBookReader(options: UseInlineBookReaderOptions) {
     readerChapterUrl,
     readerChapterName,
     readerFileName,
+    readerSourceDir,
     readerChapters,
     readerCurrentIndex,
     readerBookInfo,

@@ -116,6 +116,7 @@ pub struct ShelfBook {
     pub group_id: Option<String>,
     pub book_url: String,
     pub file_name: String,
+    pub source_dir: Option<String>,
     pub source_name: String,
     pub last_chapter: Option<String>,
     pub added_at: i64,
@@ -141,6 +142,7 @@ pub struct AddBookPayload {
     pub kind: Option<String>,
     pub group_id: Option<String>,
     pub book_url: String,
+    pub source_dir: Option<String>,
     pub last_chapter: Option<String>,
     pub source_type: Option<String>,
 }
@@ -157,6 +159,7 @@ pub struct UpdateShelfBookPayload {
     pub group_id: Option<String>,
     pub book_url: String,
     pub file_name: String,
+    pub source_dir: Option<String>,
     pub source_name: String,
     pub last_chapter: Option<String>,
     pub total_chapters: i32,

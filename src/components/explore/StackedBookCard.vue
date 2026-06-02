@@ -4,11 +4,7 @@ import { ref } from "vue";
 import type { BookItem } from "@/stores";
 import type { AggregatedBook, TaggedBookItem } from "@/types";
 import { useOverlay } from "@/composables/useOverlay";
-import {
-  getBookMetaBadges,
-  getBookMetaLine,
-  getLatestChapterText,
-} from "@/utils/bookMeta";
+import { getBookMetaBadges, getBookMetaLine, getLatestChapterText } from "@/utils/bookMeta";
 import defaultLogoUrl from "../../assets/booksource-default.svg";
 import BookCoverImg from "../BookCoverImg.vue";
 
@@ -18,7 +14,7 @@ const props = defineProps<{
 }>();
 
 const emit = defineEmits<{
-  (e: "select", book: BookItem, fileName: string): void;
+  (e: "select", book: BookItem, fileName: string, sourceDir?: string): void;
 }>();
 
 const showSourcePicker = ref(false);
@@ -43,13 +39,13 @@ function handleClick() {
     showSourcePicker.value = true;
   } else {
     const item = props.group.primary;
-    emit("select", item.book, item.fileName);
+    emit("select", item.book, item.fileName, item.sourceDir);
   }
 }
 
 function selectSource(item: TaggedBookItem) {
   closeSourcePicker();
-  emit("select", item.book, item.fileName);
+  emit("select", item.book, item.fileName, item.sourceDir);
 }
 
 function latestChapter(book: BookItem): string {
@@ -68,14 +64,8 @@ function metaLine(book: BookItem): string[] {
     @click="handleClick"
   >
     <!-- 堆叠层（仅多来源时显示底牌） -->
-    <div
-      v-if="group.sources.length > 2"
-      class="stacked-card__layer stacked-card__layer--3"
-    />
-    <div
-      v-if="group.sources.length > 1"
-      class="stacked-card__layer stacked-card__layer--2"
-    />
+    <div v-if="group.sources.length > 2" class="stacked-card__layer stacked-card__layer--3" />
+    <div v-if="group.sources.length > 1" class="stacked-card__layer stacked-card__layer--2" />
 
     <!-- 主卡片 -->
     <div class="stacked-card__main">
@@ -105,10 +95,7 @@ function metaLine(book: BookItem): string[] {
         >
           {{ group.primary.book.author || "佚名" }}
         </span>
-        <div
-          v-if="getBookMetaBadges(group.primary.book).length"
-          class="stacked-card__tags"
-        >
+        <div v-if="getBookMetaBadges(group.primary.book).length" class="stacked-card__tags">
           <n-tag
             v-for="badge in getBookMetaBadges(group.primary.book)"
             :key="badge.key"
@@ -162,7 +149,7 @@ function metaLine(book: BookItem): string[] {
     <div class="source-picker">
       <div
         v-for="(item, idx) in group.sources"
-        :key="item.fileName"
+        :key="`${item.sourceDir ?? ''}:${item.fileName}`"
         class="source-picker__card"
         @click="selectSource(item)"
       >
@@ -189,9 +176,7 @@ function metaLine(book: BookItem): string[] {
               :alt="item.sourceName"
               @error="($event.target as HTMLImageElement).src = defaultLogoUrl"
             />
-            <span class="source-picker__source-name">{{
-              item.sourceName
-            }}</span>
+            <span class="source-picker__source-name">{{ item.sourceName }}</span>
             <ChevronRight class="source-picker__arrow" :size="13" />
           </div>
 
@@ -201,10 +186,7 @@ function metaLine(book: BookItem): string[] {
           </div>
 
           <!-- 分类标签 -->
-          <div
-            v-if="getBookMetaBadges(item.book).length"
-            class="source-picker__tags"
-          >
+          <div v-if="getBookMetaBadges(item.book).length" class="source-picker__tags">
             <n-tag
               v-for="badge in getBookMetaBadges(item.book)"
               :key="badge.key"
@@ -217,24 +199,12 @@ function metaLine(book: BookItem): string[] {
           </div>
 
           <!-- 最新章节 -->
-          <div
-            v-if="latestChapter(item.book)"
-            class="source-picker__last-chapter"
-          >
+          <div v-if="latestChapter(item.book)" class="source-picker__last-chapter">
             <span class="source-picker__label">最新</span>
-            <span class="source-picker__chapter-text">{{
-              latestChapter(item.book)
-            }}</span>
+            <span class="source-picker__chapter-text">{{ latestChapter(item.book) }}</span>
           </div>
-          <div
-            v-if="metaLine(item.book).length"
-            class="source-picker__meta-line"
-          >
-            <span
-              v-for="meta in metaLine(item.book)"
-              :key="meta"
-              class="source-picker__meta-item"
-            >
+          <div v-if="metaLine(item.book).length" class="source-picker__meta-line">
+            <span v-for="meta in metaLine(item.book)" :key="meta" class="source-picker__meta-item">
               {{ meta }}
             </span>
           </div>
@@ -246,10 +216,7 @@ function metaLine(book: BookItem): string[] {
         </div>
 
         <!-- 分割线 -->
-        <div
-          v-if="idx < group.sources.length - 1"
-          class="source-picker__divider"
-        />
+        <div v-if="idx < group.sources.length - 1" class="source-picker__divider" />
       </div>
     </div>
   </n-modal>
@@ -372,11 +339,7 @@ function metaLine(book: BookItem): string[] {
   font-size: var(--fs-10) !important;
 }
 .stacked-card__tag--status {
-  --n-color: color-mix(
-    in srgb,
-    var(--color-success) 12%,
-    transparent
-  ) !important;
+  --n-color: color-mix(in srgb, var(--color-success) 12%, transparent) !important;
   --n-text-color: var(--color-success) !important;
 }
 
@@ -540,11 +503,7 @@ function metaLine(book: BookItem): string[] {
   font-size: var(--fs-10) !important;
 }
 .source-picker__tag--status {
-  --n-color: color-mix(
-    in srgb,
-    var(--color-success) 12%,
-    transparent
-  ) !important;
+  --n-color: color-mix(in srgb, var(--color-success) 12%, transparent) !important;
   --n-text-color: var(--color-success) !important;
 }
 

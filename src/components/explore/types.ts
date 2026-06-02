@@ -1,9 +1,10 @@
-import type { BookItem } from '@/stores';
+import type { BookItem } from "@/stores";
 
 /** 单条搜索结果 + 来源信息 */
 export interface TaggedBookItem {
   book: BookItem;
   fileName: string;
+  sourceDir?: string;
   sourceName: string;
   sourceLogo?: string;
 }

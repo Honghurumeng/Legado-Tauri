@@ -117,7 +117,7 @@ async function chapterContent(chapterUrl) {{
         .unwrap();
 
     assert_eq!(
-        core.eval_source_capabilities("js-fixture.js")
+        core.eval_source_capabilities("js-fixture.js", None)
             .await
             .unwrap(),
         "search,bookInfo,toc,chapterList,content,chapterContent"

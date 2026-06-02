@@ -112,7 +112,7 @@ async fn route_b_facade_imports_reads_and_persists_main_path() {
     let sources = core.list_sources().await.unwrap();
     assert!(sources.iter().any(|source| source.file_name == file_name));
     assert_eq!(
-        core.eval_source_capabilities(&file_name).await.unwrap(),
+        core.eval_source_capabilities(&file_name, None).await.unwrap(),
         "search,bookInfo,toc,chapterList,content,chapterContent"
     );
 
@@ -147,6 +147,7 @@ async fn route_b_facade_imports_reads_and_persists_main_path() {
                 kind: detail.kind,
                 group_id: None,
                 book_url: books[0].book_url.clone(),
+                source_dir: None,
                 last_chapter: chapters.last().map(|chapter| chapter.name.clone()),
                 source_type: Some("novel".to_string()),
             },
@@ -196,4 +197,53 @@ async fn route_b_facade_imports_reads_and_persists_main_path() {
     assert_eq!(core.shelf_cached_indices(&shelf.id).await.unwrap(), vec![0]);
 
     server.abort();
+}
+
+#[tokio::test]
+#[ignore = "live network test for the user-provided Legado source"]
+async fn live_yckceo_3417_novel_reading_path() {
+    let temp = tempfile::tempdir().unwrap();
+    let core = ReaderCore::new(ReaderCoreOptions::new(temp.path()))
+        .await
+        .unwrap();
+
+    let import = core
+        .import_legacy_json_url(
+            "https://www.yckceo.com/yuedu/shuyuan/json/id/3417.json",
+            false,
+        )
+        .await
+        .unwrap();
+    assert_eq!(import.imported, 1);
+
+    let file_name = import.files[0].clone();
+    let books = core.search(&file_name, "剑来", 1, None).await.unwrap();
+    assert!(!books.is_empty(), "search should return at least one book");
+    assert!(
+        books.iter().any(|book| book.name.contains("剑来")),
+        "search results should include 剑来: {books:?}"
+    );
+
+    let book = books
+        .iter()
+        .find(|book| book.name == "剑来")
+        .unwrap_or(&books[0]);
+    let detail = core.book_info(&file_name, &book.book_url, None).await.unwrap();
+    assert!(!detail.name.trim().is_empty());
+
+    let toc_url = detail.toc_url.as_deref().unwrap_or(&book.book_url);
+    let chapters = core.chapter_list(&file_name, toc_url, None).await.unwrap();
+    assert!(
+        !chapters.is_empty(),
+        "chapter list should not be empty for {toc_url}"
+    );
+
+    let content = core
+        .chapter_content(&file_name, &chapters[0].url, None)
+        .await
+        .unwrap();
+    assert!(
+        content.chars().count() > 100,
+        "chapter content should contain readable text, got: {content:?}"
+    );
 }
