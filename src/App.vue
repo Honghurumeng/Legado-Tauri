@@ -16,15 +16,12 @@ import {
   onUnmounted,
 } from "vue";
 import type { NavItem } from "@/types";
-import packageJson from "../package.json";
-import tauriConfig from "../src-tauri/tauri.conf.json";
 import AppUpdateDialog from "./components/AppUpdateDialog.vue";
 import GlobalFeedbackMirror from "./components/GlobalFeedbackMirror.vue";
 import BottomNav from "./components/layout/BottomNav.vue";
 import LogWindowPanel from "./components/layout/LogWindowPanel.vue";
 import MainContent from "./components/layout/MainContent.vue";
 import SideBar from "./components/layout/SideBar.vue";
-import TaskBar from "./components/layout/TaskBar.vue";
 import TaskCenterDrawer from "./components/layout/TaskCenterDrawer.vue";
 import TitleBar from "./components/layout/TitleBar.vue";
 import LegadoDeepLinkDialog from "./components/LegadoDeepLinkDialog.vue";
@@ -41,7 +38,6 @@ import {
 import { eventEmit } from "./composables/useEventBus";
 import { installGlobalFocusNavigation } from "./composables/useFocusNavigation";
 import { useInputMode } from "./composables/useInputMode";
-import { useLogZonePref } from "./composables/useLogZonePref";
 import { useRemoteDebug } from "./composables/useRemoteDebug";
 import { installSyncClientStateListener, useSync } from "./composables/useSync";
 import { useTts } from "./composables/useTts";
@@ -680,14 +676,6 @@ function onNavSelect(id: string) {
   }
   navigationStore.setActiveView(id);
 }
-
-const vueVersion = computed(() => packageJson.version || "0.0.0");
-// Tauri 壳版本：仅在 Tauri 环境下传给 TaskBar；鸿蒙版本暂不对接
-const tauriVersion = computed(() => (isTauri ? tauriConfig.version || "" : ""));
-const { logZoneEnabled: showLogZone } = useLogZonePref();
-const latestLogMessage = computed(
-  () => shellStatusStore.latestLog?.message ?? "暂无日志",
-);
 </script>
 
 <template>
@@ -739,17 +727,6 @@ const latestLogMessage = computed(
                 </div>
               </template>
             </MainContent>
-            <TaskBar
-              v-if="!isMobile"
-              :latest-log-level="shellStatusStore.latestLogLevel"
-              :latest-log-message="latestLogMessage"
-              :vue-version="vueVersion"
-              :tauri-version="tauriVersion"
-              :platform-label="platform || '-'"
-              :show-log-zone="showLogZone"
-              @toggle-log-window="shellStatusStore.toggleLogWindow"
-              @open-about="navigationStore.setActiveView('settings')"
-            />
             <BottomNav
               v-if="isMobile"
               :items="navItems"
@@ -835,9 +812,8 @@ const latestLogMessage = computed(
   display: grid;
   grid-template-areas:
     "sidebar title"
-    "sidebar main"
-    "sidebar taskbar";
-  grid-template-rows: var(--topbar-height) 1fr var(--bottom-bar-height);
+    "sidebar main";
+  grid-template-rows: var(--topbar-height) 1fr;
   grid-template-columns: var(--sidebar-w) 1fr;
   height: 100vh;
   height: 100dvh;
