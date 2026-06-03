@@ -12,7 +12,6 @@ import {
   Settings,
   Sparkles,
   Square,
-  Terminal,
 } from "lucide-vue-next";
 import { useMessage } from "naive-ui";
 import { storeToRefs } from "pinia";

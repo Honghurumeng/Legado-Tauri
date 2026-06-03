@@ -144,7 +144,7 @@ const webViewVersion = computed(() => detectWebViewVersion(rawUserAgent.value));
 const environmentCards = computed(() => [
   {
     label: "运行环境",
-    value: envLabel,
+    value: envLabel.value,
     desc: runtimeModeDesc.value,
   },
   {

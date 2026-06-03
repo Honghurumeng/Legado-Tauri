@@ -4,7 +4,7 @@
  * 暴露的变量：
  *   isTauri    — 是否运行在 Tauri 原生壳中
  *   isMobile   — 是否为移动端（响应式 computed，受 layoutMode 影响）
- *   autoIsMobile — 自动检测结果（固定值，不受覆盖影响）
+ *   autoIsMobile — 自动检测结果（响应式，不受模式覆盖影响）
  *   platform   — 操作系统平台字符串（响应式，Tauri 环境下由 Rust 侧准确返回）
  *   envLabel   — 人类可读的环境标签（用于 UI 展示 / 调试）
  *   layoutMode — 当前布局模式 ref（"auto" | "mobile" | "desktop"）
@@ -25,11 +25,49 @@ export const isHarmonyNative: boolean = typeof window !== 'undefined' && '__lega
 /** 是否具备原生传输能力（Tauri IPC 或鸿蒙桥接） */
 export const hasNativeTransport: boolean = isTauri || isHarmonyNative;
 
-/** 自动检测的移动端结果（固定值，不受模式覆盖影响） */
-export const autoIsMobile: boolean =
-  typeof window !== 'undefined' &&
-  (/Android|iPhone|iPad|iPod/i.test(navigator.userAgent) ||
-    window.matchMedia('(pointer: coarse)').matches);
+const AUTO_MOBILE_MAX_WIDTH = 640;
+
+/** 自动检测的移动端结果（响应式，不受模式覆盖影响） */
+const _autoIsMobile = ref(false);
+
+function detectAutoIsMobile(): boolean {
+  if (typeof window === 'undefined') {
+    return false;
+  }
+  const mobileUa = /Android|iPhone|iPad|iPod/i.test(navigator.userAgent);
+  const coarsePointer = window.matchMedia('(pointer: coarse)').matches;
+  const compactViewport = window.innerWidth <= AUTO_MOBILE_MAX_WIDTH;
+  return mobileUa || coarsePointer || compactViewport;
+}
+
+function updateAutoIsMobile() {
+  _autoIsMobile.value = detectAutoIsMobile();
+}
+
+if (typeof window !== 'undefined') {
+  updateAutoIsMobile();
+  window.addEventListener('resize', updateAutoIsMobile, { passive: true });
+  window.addEventListener('orientationchange', updateAutoIsMobile, {
+    passive: true,
+  });
+
+  const coarsePointerMedia: MediaQueryList = window.matchMedia(
+    '(pointer: coarse)',
+  );
+  const handlePointerModeChange = () => updateAutoIsMobile();
+  if ('addEventListener' in coarsePointerMedia) {
+    coarsePointerMedia.addEventListener('change', handlePointerModeChange);
+  } else {
+    const legacyMedia = coarsePointerMedia as MediaQueryList & {
+      addListener?: (listener: (event: MediaQueryListEvent) => void) => void;
+    };
+    legacyMedia.addListener?.(handlePointerModeChange);
+  }
+}
+
+export const autoIsMobile: ComputedRef<boolean> = computed(
+  () => _autoIsMobile.value,
+);
 
 /**
  * UA-based 平台检测（作为初始值 / 非 Tauri 环境回退）。
@@ -141,20 +179,20 @@ export const isMobile: ComputedRef<boolean> = computed(() => {
     case 'desktop':
       return false;
     default:
-      return autoIsMobile;
+      return autoIsMobile.value;
   }
 });
 
 /** 人类可读的环境标签 */
-export const envLabel: string = (() => {
+export const envLabel: ComputedRef<string> = computed(() => {
   if (isTauri) {
     return 'Tauri';
   }
   if (isHarmonyNative) {
     return 'Harmony';
   }
-  if (autoIsMobile) {
+  if (autoIsMobile.value) {
     return '移动端浏览器';
   }
   return '浏览器';
-})();
+});
