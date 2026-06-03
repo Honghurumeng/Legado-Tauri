@@ -195,6 +195,7 @@ const legacyJsonImportOptions = [
 const mobileMenuOptions = computed(() => [
   { label: "目录管理", key: "dir" },
   { label: "导入本地", key: "import-file" },
+  { label: "粘贴导入", key: "import-paste" },
   { label: "导入在线", key: "import-online" },
   { label: "阅读源文件导入", key: "import-legacy-file" },
   { label: "阅读源 URL 导入", key: "import-legacy-url" },
@@ -227,6 +228,9 @@ function handleMobileMenuSelect(key: string) {
       break;
     case "import-file":
       installedRef.value?.importFromFile();
+      break;
+    case "import-paste":
+      installedRef.value?.importFromPaste();
       break;
     case "import-online":
       installedRef.value?.importFromUrl();
@@ -395,6 +399,12 @@ onUnmounted(() => {
               quaternary
               @click="installedRef?.importFromFile()"
               >导入本地</n-button
+            >
+            <n-button
+              size="small"
+              quaternary
+              @click="installedRef?.importFromPaste()"
+              >粘贴导入</n-button
             >
             <n-button
               size="small"

@@ -355,6 +355,9 @@ const showUrlInputModal = ref(false);
 const urlInputValue = ref("");
 const showInstallDialog = ref(false);
 const installDialogUrl = ref("");
+const showPasteImportModal = ref(false);
+const pasteImportValue = ref("");
+const pasteImporting = ref(false);
 const showLegacyFileOptionsModal = ref(false);
 const showLegacyUrlInputModal = ref(false);
 const legacyUrlInputValue = ref("");
@@ -374,6 +377,21 @@ function updateUrlInputModalShow(value: boolean) {
     return;
   }
   closeUrlInputModal();
+}
+
+const { triggerClose: closePasteImportModal } = useOverlay(
+  () => showPasteImportModal.value,
+  () => {
+    showPasteImportModal.value = false;
+  },
+);
+
+function updatePasteImportModalShow(value: boolean) {
+  if (value) {
+    showPasteImportModal.value = true;
+    return;
+  }
+  closePasteImportModal();
 }
 
 function importFromUrl() {
@@ -478,6 +496,169 @@ function showLegacyImportResult(result: LegacyJsonImportResult) {
   }
   if (!result.imported && !result.errors.length) {
     message.warning("未找到可导入的开源阅读书源");
+  }
+}
+
+function isExportBundle(
+  value: unknown,
+): value is Array<{ fileName: string; content: string }> {
+  return (
+    Array.isArray(value) &&
+    value.every(
+      (item) =>
+        item &&
+        typeof item === "object" &&
+        typeof (item as { fileName?: unknown }).fileName === "string" &&
+        typeof (item as { content?: unknown }).content === "string",
+    )
+  );
+}
+
+function inferPastedSourceFileName(text: string) {
+  const match = text.match(/@name\s+(.+)/);
+  const name = match?.[1]?.trim() || "粘贴导入书源";
+  return toSafeFileName(name);
+}
+
+async function importExportBundleItems(
+  items: Array<{ fileName: string; content: string }>,
+  sourceLabel?: string,
+) {
+  let ok = 0;
+  const errors: string[] = [];
+  for (const [index, item] of items.entries()) {
+    try {
+      const validation = validateBookSourceContent(item.content, {
+        fileName: item.fileName,
+      });
+      const validationErrors = [
+        ...validateBookSourceFileName(item.fileName),
+        ...validation.errors,
+      ];
+      if (validationErrors.length) {
+        throw new Error(
+          formatValidationIssues("书源格式不正确", validationErrors),
+        );
+      }
+      await saveBookSource(item.fileName, item.content);
+      ok++;
+    } catch (e: unknown) {
+      const prefix = sourceLabel
+        ? `${sourceLabel} 第 ${index + 1} 项`
+        : `第 ${index + 1} 项`;
+      errors.push(`${prefix}: ${e instanceof Error ? e.message : String(e)}`);
+    }
+  }
+  return { ok, errors };
+}
+
+function showPasteImportResult(ok: number, errors: string[]) {
+  if (ok > 0) {
+    message.success(`已导入 ${ok} 个书源`);
+    emits("reload");
+  }
+  if (errors.length > 0) {
+    const visible = errors.slice(0, 3).join("；");
+    const more = errors.length > 3 ? `；另有 ${errors.length - 3} 项` : "";
+    message.warning(`有 ${errors.length} 项未导入：${visible}${more}`);
+  }
+  if (!ok && !errors.length) {
+    message.warning("未找到可导入的书源");
+  }
+}
+
+async function importFromTextContent(
+  rawText: string,
+  options?: {
+    fallbackFileName?: string;
+    smartExploreSubCategories?: boolean;
+    sourceLabel?: string;
+  },
+) {
+  const text = rawText.trim();
+  if (!text) {
+    throw new Error("请输入书源内容");
+  }
+
+  if (/^[\[{]/.test(text)) {
+    try {
+      const parsed = JSON.parse(text) as unknown;
+      if (isExportBundle(parsed)) {
+        return importExportBundleItems(parsed, options?.sourceLabel);
+      }
+      const legacyResult = await importLegacyJsonText(
+        text,
+        options?.smartExploreSubCategories,
+      );
+      return { ok: legacyResult.imported, errors: legacyResult.errors };
+    } catch (jsonError) {
+      const fallbackFileName =
+        options?.fallbackFileName || inferPastedSourceFileName(text);
+      const validation = validateBookSourceContent(text, {
+        fileName: fallbackFileName,
+      });
+      const validationErrors = [
+        ...validateBookSourceFileName(fallbackFileName),
+        ...validation.errors,
+      ];
+      if (validationErrors.length) {
+        throw new Error(
+          `无法识别导入内容：${
+            jsonError instanceof Error ? jsonError.message : String(jsonError)
+          }`,
+        );
+      }
+      await saveBookSource(fallbackFileName, text);
+      return { ok: 1, errors: [] };
+    }
+  }
+
+  const fallbackFileName =
+    options?.fallbackFileName || inferPastedSourceFileName(text);
+  const validation = validateBookSourceContent(text, {
+    fileName: fallbackFileName,
+  });
+  const validationErrors = [
+    ...validateBookSourceFileName(fallbackFileName),
+    ...validation.errors,
+  ];
+  if (validationErrors.length) {
+    throw new Error(formatValidationIssues("书源格式不正确", validationErrors));
+  }
+  await saveBookSource(fallbackFileName, text);
+  return { ok: 1, errors: [] };
+}
+
+function importFromPaste() {
+  if (pasteImporting.value) {
+    return;
+  }
+  pasteImportValue.value = "";
+  showPasteImportModal.value = true;
+}
+
+async function confirmPasteImport() {
+  if (pasteImporting.value) {
+    return;
+  }
+  const text = pasteImportValue.value.trim();
+  if (!text) {
+    message.warning("请先粘贴书源内容");
+    return;
+  }
+  pasteImporting.value = true;
+  try {
+    const result = await importFromTextContent(text, {
+      smartExploreSubCategories: legacySmartSubCategories.value,
+      sourceLabel: "粘贴内容",
+    });
+    closePasteImportModal();
+    pasteImportValue.value = "";
+    showPasteImportResult(result.ok, result.errors);
+  } catch (e: unknown) {
+    message.error(`导入失败: ${e instanceof Error ? e.message : String(e)}`);
+  } finally {
+    pasteImporting.value = false;
   }
 }
 
@@ -767,62 +948,19 @@ function importFromFile() {
       try {
         const text = await file.text();
         if (file.name.toLowerCase().endsWith(".json")) {
-          const parsed = JSON.parse(text) as unknown;
-          const looksLikeExportBundle =
-            Array.isArray(parsed) &&
-            parsed.every(
-              (item) =>
-                item &&
-                typeof item === "object" &&
-                typeof (item as { fileName?: unknown }).fileName ===
-                  "string" &&
-                typeof (item as { content?: unknown }).content === "string",
-            );
-          if (looksLikeExportBundle) {
-            for (const [index, item] of (
-              parsed as Array<{ fileName: string; content: string }>
-            ).entries()) {
-              try {
-                const validation = validateBookSourceContent(item.content, {
-                  fileName: item.fileName,
-                });
-                const validationErrors = [
-                  ...validateBookSourceFileName(item.fileName),
-                  ...validation.errors,
-                ];
-                if (validationErrors.length) {
-                  throw new Error(
-                    formatValidationIssues("书源格式不正确", validationErrors),
-                  );
-                }
-                await saveBookSource(item.fileName, item.content);
-                ok++;
-              } catch (e: unknown) {
-                errors.push(
-                  `${file.name} 第 ${index + 1} 项: ${e instanceof Error ? e.message : String(e)}`,
-                );
-              }
-            }
-          } else {
-            const result = await importLegacyJsonText(text);
-            ok += result.imported;
-            errors.push(...result.errors.map((err) => `${file.name}: ${err}`));
-          }
-        } else {
-          const validation = validateBookSourceContent(text, {
-            fileName: file.name,
+          const result = await importFromTextContent(text, {
+            fallbackFileName: file.name,
+            sourceLabel: file.name,
           });
-          const validationErrors = [
-            ...validateBookSourceFileName(file.name),
-            ...validation.errors,
-          ];
-          if (validationErrors.length) {
-            throw new Error(
-              formatValidationIssues("书源格式不正确", validationErrors),
-            );
-          }
-          await saveBookSource(file.name, text);
-          ok++;
+          ok += result.ok;
+          errors.push(...result.errors);
+        } else {
+          const result = await importFromTextContent(text, {
+            fallbackFileName: file.name,
+            sourceLabel: file.name,
+          });
+          ok += result.ok;
+          errors.push(...result.errors);
         }
       } catch (e) {
         errors.push(
@@ -1006,6 +1144,7 @@ defineExpose({
   handleFileChange,
   openDirManager,
   importFromFile,
+  importFromPaste,
   importFromUrl,
   importLegacyJsonFromFile,
   importLegacyJsonFromUrl,
@@ -1230,6 +1369,48 @@ defineExpose({
     />
   </n-modal>
 
+  <!-- 粘贴导入书源 -->
+  <n-modal
+    :show="showPasteImportModal"
+    preset="card"
+    title="粘贴导入书源"
+    style="width: 720px; max-width: 95vw"
+    :mask-closable="!pasteImporting"
+    @update:show="updatePasteImportModalShow"
+  >
+    <div class="paste-import">
+      <n-alert type="info" :show-icon="true">
+        支持粘贴单个 JS 书源、已导出的 JSON 书源包，以及开源阅读 JSON 文本。
+      </n-alert>
+      <n-input
+        v-model:value="pasteImportValue"
+        type="textarea"
+        placeholder="将书源内容粘贴到这里..."
+        :autosize="{ minRows: 12, maxRows: 20 }"
+        :disabled="pasteImporting"
+      />
+      <n-checkbox
+        v-model:checked="legacySmartSubCategories"
+        :disabled="pasteImporting"
+      >
+        粘贴的是开源阅读 JSON 时，智能识别二级分类（宽度为 1 的分类作为一级分类）
+      </n-checkbox>
+    </div>
+    <template #footer>
+      <div class="paste-import__footer">
+        <n-button :disabled="pasteImporting" @click="closePasteImportModal"
+          >取消</n-button
+        >
+        <n-button
+          type="primary"
+          :loading="pasteImporting"
+          @click="confirmPasteImport"
+          >导入</n-button
+        >
+      </div>
+    </template>
+  </n-modal>
+
   <!-- 导入开源阅读书源：文件选项弹窗 -->
   <n-modal
     :show="showLegacyFileOptionsModal"
@@ -1356,6 +1537,18 @@ defineExpose({
   min-height: 0;
   display: flex;
   flex-direction: column;
+}
+
+.paste-import {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
+.paste-import__footer {
+  display: flex;
+  justify-content: flex-end;
+  gap: 8px;
 }
 
 .bv-pane :deep(.n-spin-content) {
