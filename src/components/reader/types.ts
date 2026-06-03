@@ -285,7 +285,7 @@ export const DEFAULT_SETTINGS: ReaderSettings = {
   backgroundPresetId: "",
   skinPresetId: "",
   backBehavior: "bookshelf",
-  hideTopBarOnMobile: false,
+  hideTopBarOnMobile: true,
   volumeKeyPageTurnEnabled: false,
   useGlobalSettingsForAllBooks: false,
   tapZoneLeft: 0.3,
