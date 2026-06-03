@@ -106,6 +106,9 @@ export function sanitizeBookDetail(
   // author：建议字段，为空视为空字符串
   const author = coerceString(r.author, "author", fieldErrors) ?? "";
 
+  // bookUrl：可选，缺失时回退到调用方传入的 URL
+  const bookUrl = coerceString(r.bookUrl, "bookUrl", fieldErrors) ?? fallbackUrl;
+
   // tocUrl：bookInfo 中必需，缺失时使用 fallbackUrl 并记录警告
   let tocUrl: string | undefined;
   if (typeof r.tocUrl === "string" && r.tocUrl.trim()) {
@@ -149,7 +152,7 @@ export function sanitizeBookDetail(
     fieldErrors,
   );
 
-  const data: BookDetail = { name, author };
+  const data: BookDetail = { name, author, bookUrl };
   if (coverUrl !== undefined) data.coverUrl = coverUrl;
   if (intro !== undefined) data.intro = intro;
   if (kind !== undefined) data.kind = kind;

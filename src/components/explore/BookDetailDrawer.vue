@@ -286,7 +286,6 @@ watch(
     chapterWarnings.value = { skipped: 0, messages: [] };
     try {
       await ensureLoaded();
-      onShelf.value = isOnShelf(props.bookUrl, props.fileName);
 
       // 先获取书籍详情，拿到 tocUrl（目录专属 URL），再用它加载章节列表
       // bookInfo 返回的 tocUrl 可能与 bookUrl 不同（如番茄小说使用独立目录接口）
@@ -297,6 +296,12 @@ watch(
         props.bookUrl,
       );
       detail.value = sanitized.data;
+      // 详情请求可能被站点 301 到新域名，后续判重/入架/打开阅读器都优先使用
+      // 规范化后的 detail.bookUrl，避免旧链接（如 m.elkoparts.com）继续残留。
+      onShelf.value = isOnShelf(
+        detail.value.bookUrl ?? props.bookUrl,
+        props.fileName,
+      );
       fieldErrors.value = sanitized.fieldErrors;
       const tocUrl = detail.value.tocUrl ?? props.bookUrl;
       const listRaw = await runChapterList(props.fileName, tocUrl);
@@ -337,7 +342,7 @@ function onClickChapter(ch: ChapterItem, indexInDisplay: number) {
     coverUrl: d?.coverUrl,
     intro: d?.intro,
     kind: d?.kind,
-    bookUrl: props.bookUrl,
+    bookUrl: d?.bookUrl ?? props.bookUrl,
     sourceName: props.sourceName,
     fileName: props.fileName,
     lastChapter: getNormalizedLastChapter(d),
@@ -368,6 +373,8 @@ async function handleAddToShelf() {
   addingToShelf.value = true;
   try {
     const d = detail.value;
+    // 书架里保留最终规范化后的书籍 URL，避免同一本书因为旧域名/新域名并存而重复入架。
+    const resolvedBookUrl = d.bookUrl ?? props.bookUrl;
     const result = await addToShelf(
       {
         name: d.name,
@@ -375,7 +382,7 @@ async function handleAddToShelf() {
         coverUrl: getCoverImageUrl(d.coverUrl),
         intro: d.intro,
         kind: d.kind,
-        bookUrl: props.bookUrl,
+        bookUrl: resolvedBookUrl,
         lastChapter: getNormalizedLastChapter(d),
         sourceType: props.sourceType ?? "novel",
       },

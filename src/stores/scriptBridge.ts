@@ -55,6 +55,7 @@ export interface BookItem {
 export interface BookDetail {
   name: string;
   author: string;
+  bookUrl?: string;
   coverUrl?: CoverImageInput;
   intro?: string;
   kind?: string;

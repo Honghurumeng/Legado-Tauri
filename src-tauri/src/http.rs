@@ -58,13 +58,27 @@ pub fn build_headers(
 }
 
 pub async fn fetch_text(url: &str, referer: Option<&str>) -> Result<String> {
+    let (_, body) = fetch_text_with_final_url(url, referer).await?;
+    Ok(body)
+}
+
+pub async fn fetch_text_with_final_url(
+    url: &str,
+    referer: Option<&str>,
+) -> Result<(String, String)> {
+    // 某些书源域名会在站点迁移后长期保留 301 跳转。
+    // 真实案例：m.elkoparts.com 会跳到 m.elkoparts.net。
+    // 调用方需要拿到最终落地 URL 继续解析相对链接，否则后续目录/正文链接
+    // 仍会被 resolve 回旧域名，最终在详情页或章节加载时报错。
     let resp = client()?
         .get(url)
         .headers(build_headers(None, referer)?)
         .send()
         .await?
         .error_for_status()?;
-    decode_response_text(resp).await
+    let final_url = resp.url().to_string();
+    let body = decode_response_text(resp).await?;
+    Ok((final_url, body))
 }
 
 pub async fn request_text(
