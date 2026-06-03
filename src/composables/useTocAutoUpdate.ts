@@ -10,6 +10,7 @@ import type { ShelfBook } from "@/composables/useBookshelf";
 import { LOCAL_TXT_FILE_NAME, useBookshelfStore } from "@/stores/bookshelf";
 import { usePreferencesStore } from "@/stores/preferences";
 import { useScriptBridgeStore } from "@/stores/scriptBridge";
+import { getNormalizedLastChapter } from "@/utils/bookMeta";
 import { useDynamicConfig } from "./useDynamicConfig";
 
 interface RefreshAllTocOptions {
@@ -60,6 +61,21 @@ async function refreshBookToc(
       book.fileName,
       book.bookUrl,
     );
+    const latestChapter = getNormalizedLastChapter(
+      info as {
+        lastChapter?: string;
+        latestChapter?: string;
+      },
+    );
+    const currentLastChapter = getNormalizedLastChapter(book);
+    if (
+      latestChapter &&
+      currentLastChapter &&
+      latestChapter === currentLastChapter
+    ) {
+      setLastCheckTime(book.id, Date.now());
+      return 0;
+    }
     const tocUrl = (info as { tocUrl?: string }).tocUrl ?? book.bookUrl;
     const raw = await scriptBridgeStore.runChapterList(book.fileName, tocUrl);
     const fetched = (raw as RawChapterItem[]).map((chapter, index) => ({
@@ -79,9 +95,13 @@ async function refreshBookToc(
     await bookshelfStore.saveChapters(book.id, fetched);
 
     // 同步更新书架中的 totalChapters
-    if (fetched.length !== book.totalChapters) {
+    if (
+      fetched.length !== book.totalChapters ||
+      (latestChapter && latestChapter !== currentLastChapter)
+    ) {
       await bookshelfStore.patchBook(book.id, {
         totalChapters: fetched.length,
+        lastChapter: latestChapter ?? fetched.at(-1)?.name,
       });
     }
 

@@ -69,7 +69,7 @@ const emit = defineEmits<{
 const message = useMessage();
 const { runBookInfo, runChapterList, runChapterContent } =
   useScriptBridgeStore();
-const { addToShelf, saveChapters, saveContent, isOnShelf, ensureLoaded } =
+const { addToShelf, patchBook, saveChapters, saveContent, isOnShelf, ensureLoaded } =
   useBookshelfStore();
 
 const loading = ref(false);
@@ -401,6 +401,10 @@ async function handleAddToShelf() {
         currency: ch.currency,
       }));
       await saveChapters(result.id, cached);
+      await patchBook(result.id, {
+        totalChapters: cached.length,
+        lastChapter: getNormalizedLastChapter(d) ?? cached.at(-1)?.name,
+      });
     }
     onShelf.value = true;
     message.success("已加入书架"); // 后台预缓存第一章正文（非阻塞，忽略错误）
