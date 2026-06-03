@@ -40,6 +40,9 @@ release-assets/
 /src-tauri/target/
 /src-tauri/.tauri/
 /src-tauri/gen/schemas/
+/src-tauri/gen/android/key.properties
+/android-signing/
+/android-signing.local.md
 
 # 本地配置文件
 .env

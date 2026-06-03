@@ -10,9 +10,11 @@ mod storage;
 
 use app_config::AppConfigState;
 use bookshelf::BookshelfState;
+use fs_utils::init_app_paths;
 use storage::StorageState;
 use tauri::Manager;
 
+#[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
     tauri::Builder::default()
         .plugin(tauri_plugin_dialog::init())
@@ -117,6 +119,16 @@ pub fn run() {
             extensions::extension_open_in_vscode,
         ])
         .setup(|app| {
+            let data_dir = app
+                .path()
+                .app_data_dir()
+                .map_err(|err| format!("无法定位应用数据目录: {err}"))?;
+            let cache_dir = app
+                .path()
+                .app_cache_dir()
+                .unwrap_or_else(|_| std::env::temp_dir());
+            init_app_paths(data_dir, cache_dir);
+
             let handle = app.handle();
             let storage = handle.state::<StorageState>();
             storage

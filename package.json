@@ -13,7 +13,7 @@
     "build": "vite build",
     "build:harmony": "cross-env LEGADO_BUILD_TARGET=harmony vite build && node scripts/copy-harmony-web.mjs",
     "build:web-server": "cargo build --manifest-path ./src-tauri/Cargo.toml --release --target x86_64-unknown-linux-gnu",
-    "build:android:release": "cross-env RUSTC_WRAPPER=sccache CARGO_BUILD_JOBS=32 RAYON_NUM_THREADS=32 dotenv -e .env -o -- tauri android build --apk --target aarch64 && node scripts/copy-build-result.mjs android",
+    "build:android:release": "cross-env CARGO_BUILD_JOBS=32 RAYON_NUM_THREADS=32 dotenv -e .env -o -- tauri android build --apk --target aarch64",
     "build:windows:release": "cross-env RUSTC_WRAPPER=sccache tauri build --target x86_64-pc-windows-msvc --no-bundle && node scripts/copy-build-result.mjs windows",
     "preview": "vite preview",
     "booksource:node:test": "node scripts/booksource-node-runtime.mjs test",

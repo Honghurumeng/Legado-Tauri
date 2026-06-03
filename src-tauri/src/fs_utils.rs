@@ -1,8 +1,21 @@
 use crate::errors::{BackendError, Result};
 use sha2::{Digest, Sha256};
 use std::path::{Path, PathBuf};
+use std::sync::OnceLock;
+
+static APP_DATA_DIR: OnceLock<PathBuf> = OnceLock::new();
+static APP_CACHE_DIR: OnceLock<PathBuf> = OnceLock::new();
+
+pub fn init_app_paths(data_dir: PathBuf, cache_dir: PathBuf) {
+    let _ = APP_DATA_DIR.set(data_dir);
+    let _ = APP_CACHE_DIR.set(cache_dir);
+}
 
 pub fn app_data_dir() -> Result<PathBuf> {
+    if let Some(path) = APP_DATA_DIR.get() {
+        return Ok(path.clone());
+    }
+
     let base = dirs::data_local_dir()
         .or_else(dirs::data_dir)
         .ok_or_else(|| BackendError::msg("无法定位应用数据目录"))?;
@@ -10,6 +23,10 @@ pub fn app_data_dir() -> Result<PathBuf> {
 }
 
 pub fn cache_dir() -> Result<PathBuf> {
+    if let Some(path) = APP_CACHE_DIR.get() {
+        return Ok(path.clone());
+    }
+
     let base = dirs::cache_dir().unwrap_or_else(std::env::temp_dir);
     Ok(base.join("legado-tauri"))
 }
