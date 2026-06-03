@@ -195,6 +195,7 @@ async function saveDetail() {
       name: form.name.trim(),
       author: form.author.trim(),
       coverUrl: optionalText(form.coverUrl),
+      coverReferer: book.coverReferer,
       intro: optionalText(form.intro),
       kind: optionalText(form.kind),
       bookUrl: form.bookUrl.trim(),

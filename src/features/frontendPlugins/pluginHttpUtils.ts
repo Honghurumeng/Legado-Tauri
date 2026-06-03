@@ -40,6 +40,7 @@ export async function patchShelfBook(id: string, patch: PatchShelfBookPayload): 
     name: patch.name ?? current.name,
     author: patch.author ?? current.author,
     coverUrl: patch.coverUrl ?? current.coverUrl,
+    coverReferer: patch.coverReferer ?? current.coverReferer,
     intro: patch.intro ?? current.intro,
     kind: patch.kind ?? current.kind,
     bookUrl: patch.bookUrl ?? current.bookUrl,

@@ -1,5 +1,5 @@
 use crate::errors::{BackendError, Result};
-use crate::fs_utils::cache_dir;
+use crate::fs_utils::{cache_dir, stable_hash};
 use crate::http::{self, HttpProxyResponse};
 use crate::storage::StorageState;
 use serde::{Deserialize, Serialize};
@@ -19,6 +19,23 @@ pub struct SysFont {
     pub family: String,
     pub postscript_name: String,
     pub path: String,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct CoverCacheRequest {
+    pub url: String,
+    #[serde(default)]
+    pub referer: Option<String>,
+    #[serde(default)]
+    pub headers: Option<Value>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct CoverCacheResult {
+    pub local_path: String,
+    pub local_ref: String,
 }
 
 #[tauri::command]
@@ -89,6 +106,48 @@ pub async fn cover_cache_clear() -> Result<u64> {
 }
 
 #[tauri::command]
+pub async fn cover_resolve_cache(request: CoverCacheRequest) -> Result<CoverCacheResult> {
+    let url = request.url.trim();
+    if url.is_empty() {
+        return Err(BackendError::msg("封面链接为空"));
+    }
+
+    let dir = StorageState::cover_cache_dir()?;
+    tokio::fs::create_dir_all(&dir).await?;
+    let ext = cover_extension(url);
+    let cache_key = stable_hash(&format!(
+        "{}\n{}\n{}",
+        url,
+        request.referer.as_deref().unwrap_or_default(),
+        request.headers.as_ref().map(Value::to_string).unwrap_or_default()
+    ));
+    let path = dir.join(format!("{cache_key}.{ext}"));
+
+    if !path.exists() {
+        let resp = http::client()?
+            .get(url)
+            .headers(http::build_headers(
+                request.headers.clone(),
+                request.referer.as_deref(),
+            )?)
+            .send()
+            .await?
+            .error_for_status()?;
+        let bytes = resp.bytes().await?;
+        if bytes.is_empty() {
+            return Err(BackendError::msg("封面响应为空"));
+        }
+        tokio::fs::write(&path, bytes).await?;
+    }
+
+    let local_path = path.to_string_lossy().to_string();
+    Ok(CoverCacheResult {
+        local_ref: format!("local://{local_path}"),
+        local_path,
+    })
+}
+
+#[tauri::command]
 pub async fn booksource_http_proxy(
     url: String,
     method: Option<String>,
@@ -104,6 +163,21 @@ pub async fn booksource_http_proxy(
         referer.as_deref(),
     )
     .await
+}
+
+fn cover_extension(url: &str) -> &'static str {
+    let lower = url.split('?').next().unwrap_or(url).to_ascii_lowercase();
+    if lower.ends_with(".png") {
+        "png"
+    } else if lower.ends_with(".webp") {
+        "webp"
+    } else if lower.ends_with(".gif") {
+        "gif"
+    } else if lower.ends_with(".avif") {
+        "avif"
+    } else {
+        "jpg"
+    }
 }
 
 #[tauri::command]

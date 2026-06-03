@@ -29,6 +29,7 @@ pub fn run() {
             commands::list_system_fonts,
             commands::cover_cache_size,
             commands::cover_cache_clear,
+            commands::cover_resolve_cache,
             commands::booksource_http_proxy,
             commands::web_server_status,
             commands::web_server_start,

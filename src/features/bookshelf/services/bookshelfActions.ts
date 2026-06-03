@@ -3,12 +3,19 @@ import type { WholeBookSwitchedPayload } from "@/components/reader/types";
 import { invokeWithTimeout } from "@/composables/useInvoke";
 import { useShelfGroups } from "@/composables/useShelfGroups";
 import {
+  isLocalTxtBook,
   useBookshelfStore,
   useFrontendPluginsStore,
+  type BookDetail,
   type ChapterItem,
   type ShelfBook,
 } from "@/stores";
 import { usePreferencesStore } from "@/stores/preferences";
+import {
+  getCoverImageReferer,
+  getCoverImageSourceUrl,
+  getCoverImageUrl,
+} from "@/utils/coverImage";
 import { useBookshelfReaderStore } from "../stores/bookshelfReader";
 import { useBookshelfUiStore } from "../stores/bookshelfUi";
 
@@ -54,6 +61,42 @@ export function useBookshelfActions(message: MessageApi) {
     }
   }
 
+  async function handleFetchCover(book: ShelfBook) {
+    if (isLocalTxtBook(book)) {
+      message.warning("本地 TXT 书籍没有可查询的书源封面");
+      return;
+    }
+    try {
+      const timeoutMs = (preferencesStore.search.searchTimeoutSecs || 35) * 1000;
+      const detail = await invokeWithTimeout<BookDetail>(
+        "booksource_book_info",
+        {
+          fileName: book.fileName,
+          bookUrl: book.bookUrl,
+          sourceDir: null,
+        },
+        timeoutMs,
+      );
+      const coverUrl = getCoverImageUrl(detail.coverUrl)?.trim();
+      if (!coverUrl) {
+        message.info("书源未返回封面");
+        return;
+      }
+      const coverReferer =
+        getCoverImageReferer(detail.coverUrl) ??
+        getCoverImageSourceUrl(detail.coverUrl) ??
+        detail.bookUrl ??
+        book.bookUrl;
+      await bookshelfStore.patchBook(book.id, { coverUrl, coverReferer });
+      syncOpenReaderBookInfo(book.id);
+      message.success("已获取并写回封面");
+    } catch (error: unknown) {
+      message.error(
+        `获取封面失败: ${error instanceof Error ? error.message : String(error)}`,
+      );
+    }
+  }
+
   async function handleMenuSelect(key: string) {
     uiStore.closeContextMenu();
     if (!uiStore.contextBook) {
@@ -76,6 +119,10 @@ export function useBookshelfActions(message: MessageApi) {
     if (key === "open-cover-generator") {
       uiStore.coverGeneratorBook = book;
       uiStore.showCoverGeneratorDialog = true;
+      return;
+    }
+    if (key === "fetch-cover") {
+      await handleFetchCover(book);
       return;
     }
     if (key === "open-detail" || key === "edit-detail") {

@@ -72,6 +72,10 @@ function toAbsUrl(url: string, base: string | undefined): string {
   }
 }
 
+function isInlineImageRef(url: string): boolean {
+  return url.startsWith('data:') || url.startsWith('blob:');
+}
+
 /** 应用新的 resolvedSrc，若与上次成功加载的 src 相同则直接标记为 loaded */
 function applyResolvedSrc(newSrc: string, fromCache: boolean) {
   isFromCache.value = fromCache;
@@ -90,6 +94,11 @@ watch(
       resolvedSrc.value = undefined;
       isFromCache.value = false;
       status.value = 'empty';
+      return;
+    }
+
+    if (isInlineImageRef(rawUrl)) {
+      applyResolvedSrc(rawUrl, false);
       return;
     }
 
@@ -121,7 +130,12 @@ watch(
         }
         applyResolvedSrc(toFileSrcSync(result.localPath), true);
         return;
-      } catch {
+      } catch (error) {
+        console.warn('[BookCoverImg] cover_resolve_cache failed', {
+          url: absUrl,
+          referer: getCoverImageReferer(src),
+          error,
+        });
         if (seq === resolveSeq) {
           status.value = 'error';
         }

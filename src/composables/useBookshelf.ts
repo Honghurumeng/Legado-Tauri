@@ -50,6 +50,7 @@ export interface UpdateShelfBookPayload {
   name: string;
   author?: string;
   coverUrl?: string;
+  coverReferer?: string;
   intro?: string;
   kind?: string;
   groupId?: string;
@@ -76,6 +77,7 @@ export interface PatchShelfBookPayload {
   name?: string;
   author?: string;
   coverUrl?: string;
+  coverReferer?: string;
   intro?: string;
   kind?: string;
   groupId?: string;
@@ -320,6 +322,7 @@ export function useBookshelf() {
         name: patch.name ?? current.name,
         author: patch.author ?? current.author,
         coverUrl: patch.coverUrl ?? current.coverUrl,
+        coverReferer: patch.coverReferer ?? current.coverReferer,
         intro: patch.intro ?? current.intro,
         kind: patch.kind ?? current.kind,
         groupId: patch.groupId ?? current.groupId,

@@ -5,7 +5,10 @@ export function shelfBookToReaderBookInfo(book: ShelfBook): ReaderBookInfo {
   return {
     name: book.name,
     author: book.author,
-    coverUrl: book.coverUrl,
+    coverUrl:
+      book.coverReferer && book.coverUrl
+        ? { url: book.coverUrl, referer: book.coverReferer }
+        : book.coverUrl,
     intro: book.intro,
     kind: book.kind,
     bookUrl: book.bookUrl,

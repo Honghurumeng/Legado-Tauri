@@ -74,6 +74,7 @@ export const useBookshelfUiStore = defineStore('bookshelfUi', () => {
       { label: '撤销上次换源', key: 'restore-switch' },
     ];
     if (book) {
+      items.push({ label: '获取封面', key: 'fetch-cover' });
       items.push({ label: '生成封面', key: 'open-cover-generator' });
     }
     if (pluginCoverGenerators.length) {

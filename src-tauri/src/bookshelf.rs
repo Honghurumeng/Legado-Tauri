@@ -52,6 +52,8 @@ pub struct AddBookPayload {
     #[serde(default)]
     pub cover_url: Option<String>,
     #[serde(default)]
+    pub cover_referer: Option<String>,
+    #[serde(default)]
     pub intro: Option<String>,
     #[serde(default)]
     pub kind: Option<String>,
@@ -73,6 +75,8 @@ pub struct UpdateShelfBookPayload {
     pub author: Option<String>,
     #[serde(default)]
     pub cover_url: Option<String>,
+    #[serde(default)]
+    pub cover_referer: Option<String>,
     #[serde(default)]
     pub intro: Option<String>,
     #[serde(default)]
@@ -194,7 +198,9 @@ fn book_from_update(payload: UpdateShelfBookPayload, current: Option<&ShelfBook>
         name: payload.name,
         author: payload.author.unwrap_or_default(),
         cover_url: payload.cover_url,
-        cover_referer: current.and_then(|book| book.cover_referer.clone()),
+        cover_referer: payload
+            .cover_referer
+            .or_else(|| current.and_then(|book| book.cover_referer.clone())),
         intro: payload.intro,
         kind: payload.kind,
         group_id: payload.group_id,
@@ -264,7 +270,7 @@ pub async fn bookshelf_add(
         name: book.name,
         author: book.author.unwrap_or_default(),
         cover_url: book.cover_url,
-        cover_referer: None,
+        cover_referer: book.cover_referer,
         intro: book.intro,
         kind: book.kind,
         group_id: book.group_id,
