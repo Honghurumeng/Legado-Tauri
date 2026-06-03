@@ -100,17 +100,15 @@ const desktopNavItems: NavItem[] = [
   { id: "explore", icon: "explore", label: "发现" },
   { id: "search", icon: "search", label: "搜索" },
   { id: "booksource", icon: "booksource", label: "书源管理" },
-  { id: "extensions", icon: "extensions", label: "插件管理" },
   { id: "settings", icon: "settings", label: "设置" },
 ];
 
-/** 移动端底部导航项（精简六项） */
+/** 移动端底部导航项 */
 const mobileNavItems: NavItem[] = [
   { id: "bookshelf", icon: "bookshelf", label: "书架" },
   { id: "explore", icon: "explore", label: "发现" },
   { id: "search", icon: "search", label: "搜索" },
   { id: "booksource", icon: "booksource", label: "书源" },
-  { id: "extensions", icon: "extensions", label: "扩展" },
   { id: "settings", icon: "settings", label: "设置" },
 ];
 
